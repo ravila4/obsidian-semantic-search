@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -34,6 +35,25 @@ class IndexResult:
         if self.started_at and self.finished_at:
             return (self.finished_at - self.started_at).total_seconds()
         return 0.0
+
+
+@dataclass
+class PendingChanges:
+    """Summary of files that need indexing."""
+
+    new_files: list[str] = field(default_factory=list)
+    modified_files: list[str] = field(default_factory=list)
+    deleted_files: list[str] = field(default_factory=list)
+
+    @property
+    def has_changes(self) -> bool:
+        """Return True if there are any pending changes."""
+        return bool(self.new_files or self.modified_files or self.deleted_files)
+
+    @property
+    def total_count(self) -> int:
+        """Return total number of pending changes."""
+        return len(self.new_files) + len(self.modified_files) + len(self.deleted_files)
 
 
 # Default patterns to ignore
@@ -114,12 +134,18 @@ class VaultIndexer:
 
         self._db = SemanticDB(db_path, dimension=embedder.dimension)
 
-    def index(self, full: bool = False) -> IndexResult:
+    def index(
+        self,
+        full: bool = False,
+        progress_callback: Callable[[int, int, str], None] | None = None,
+    ) -> IndexResult:
         """Index the vault.
 
         Args:
             full: If True, reindex all files. If False (default),
                 only process new/modified files.
+            progress_callback: Optional callback function called for each file.
+                Receives (current, total, file_path) arguments.
 
         Returns:
             IndexResult with statistics about the operation.
@@ -140,12 +166,17 @@ class VaultIndexer:
             to_delete = changes["deleted"]
 
         # Process files
-        for file_path in to_process:
+        total_files = len(to_process)
+        for idx, file_path in enumerate(to_process, start=1):
+            rel_path = str(file_path.relative_to(self._vault_path))
+            if progress_callback:
+                progress_callback(idx, total_files, rel_path)
+
             try:
                 self._index_file(file_path)
                 result.files_processed += 1
             except Exception as e:
-                result.errors.append(f"{file_path}: {e}")
+                result.errors.append(f"{rel_path}: {e}")
 
         # Remove deleted files
         for rel_path in to_delete:
@@ -158,6 +189,21 @@ class VaultIndexer:
         result.finished_at = datetime.now()
 
         return result
+
+    def get_pending_changes(self) -> PendingChanges:
+        """Get summary of files that need indexing.
+
+        Returns:
+            PendingChanges with lists of new, modified, and deleted files.
+        """
+        files = list(self._discover_files())
+        changes = self._detect_changes(files)
+
+        return PendingChanges(
+            new_files=[str(f.relative_to(self._vault_path)) for f in changes["new"]],
+            modified_files=[str(f.relative_to(self._vault_path)) for f in changes["modified"]],
+            deleted_files=changes["deleted"],
+        )
 
     def _discover_files(self) -> Iterator[Path]:
         """Discover all markdown files in the vault.

@@ -284,3 +284,60 @@ class TestIndexResult:
         assert result.duration_seconds >= 0
         assert result.started_at is not None
         assert result.finished_at is not None
+
+
+class TestProgressReporting:
+    """Test progress callback during indexing."""
+
+    def test_progress_callback_called_for_each_file(
+        self, vault_path: Path, db_path: Path, mock_embedder: Mock
+    ):
+        """Progress callback should be called once per processed file."""
+        mock_embedder.embed.side_effect = lambda texts: [[0.1] * 768 for _ in texts]
+
+        indexer = VaultIndexer(vault_path, db_path, mock_embedder)
+
+        # Track progress calls
+        progress_calls = []
+        def on_progress(current: int, total: int, file_path: str):
+            progress_calls.append((current, total, file_path))
+
+        result = indexer.index(progress_callback=on_progress)
+
+        # Should have called progress for each file
+        assert len(progress_calls) == result.files_processed
+        # First call should be 1 of total
+        assert progress_calls[0][0] == 1
+        # Last call should be total of total
+        assert progress_calls[-1][0] == result.files_processed
+        # Total should be consistent
+        assert all(call[1] == result.files_processed for call in progress_calls)
+        # File paths should be present
+        assert all(call[2] for call in progress_calls)
+
+    def test_progress_callback_includes_errors(
+        self, vault_path: Path, db_path: Path, mock_embedder: Mock
+    ):
+        """Progress callback should be called even for files with errors."""
+        # Make embedder fail on first file
+        call_count = 0
+        def embed_with_error(texts):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("Embedding failed")
+            return [[0.1] * 768 for _ in texts]
+
+        mock_embedder.embed.side_effect = embed_with_error
+
+        indexer = VaultIndexer(vault_path, db_path, mock_embedder)
+
+        progress_calls = []
+        def on_progress(current: int, total: int, file_path: str):
+            progress_calls.append((current, total, file_path))
+
+        result = indexer.index(progress_callback=on_progress)
+
+        # Should have called progress for all files (including failed ones)
+        assert len(progress_calls) == 3  # Total files in vault
+        assert len(result.errors) > 0
