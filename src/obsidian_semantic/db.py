@@ -216,6 +216,7 @@ class SemanticDB:
         filter_tags: list[str] | None = None,
         filter_folder: str | None = None,
         filter_after: datetime | None = None,
+        exclude_file: str | None = None,
     ) -> list[SearchResult]:
         """Search for similar chunks.
 
@@ -225,6 +226,7 @@ class SemanticDB:
             filter_tags: Only return chunks with any of these tags.
             filter_folder: Only return chunks from files in this folder.
             filter_after: Only return chunks modified after this date.
+            exclude_file: Exclude chunks from this file path.
 
         Returns:
             List of search results ordered by similarity.
@@ -247,6 +249,8 @@ class SemanticDB:
             filters.append(f"starts_with(file_path, '{_escape_sql_string(filter_folder)}')")
         if filter_after:
             filters.append(f"modified_at > '{filter_after.isoformat()}'")
+        if exclude_file:
+            filters.append(f"file_path != '{_escape_sql_string(exclude_file)}'")
 
         if filters:
             query = query.where(" AND ".join(filters), prefilter=True)

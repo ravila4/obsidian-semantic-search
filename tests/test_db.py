@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from obsidian_semantic.db import ChunkRecord, SemanticDB, SearchResult
+from obsidian_semantic.db import ChunkRecord, SearchResult, SemanticDB
 
 
 @pytest.fixture
@@ -235,6 +235,33 @@ class TestSpecialCharacters:
         # Search with tag containing apostrophe should work
         results = db.search([0.1] * 768, limit=10, filter_tags=["it's-a-tag"])
         assert len(results) == 1
+
+
+class TestExcludeFile:
+    """Test exclude_file parameter in search."""
+
+    def test_search_excludes_file(self, db: SemanticDB, sample_chunks: list[ChunkRecord]):
+        """Search with exclude_file should not return chunks from that file."""
+        db.upsert_chunks(sample_chunks)
+
+        # Query vector close to python chunks, but exclude python.md
+        query_vector = [0.1] * 768
+        results = db.search(query_vector, limit=10, exclude_file="notes/python.md")
+
+        assert len(results) > 0
+        assert all(r.file_path != "notes/python.md" for r in results)
+
+    def test_search_without_exclude_file_returns_all(
+        self, db: SemanticDB, sample_chunks: list[ChunkRecord]
+    ):
+        """Search without exclude_file returns results from all files."""
+        db.upsert_chunks(sample_chunks)
+
+        query_vector = [0.15] * 768
+        results = db.search(query_vector, limit=10)
+
+        file_paths = {r.file_path for r in results}
+        assert len(file_paths) == 2  # Both python.md and rust.md
 
 
 class TestStats:

@@ -10,9 +10,10 @@ from pathlib import Path
 import typer
 import yaml
 
+from obsidian_semantic.chunker import chunk_note, parse_note
 from obsidian_semantic.config import load_config
-from obsidian_semantic.db import SemanticDB
-from obsidian_semantic.indexer import VaultIndexer
+from obsidian_semantic.db import SearchResult, SemanticDB
+from obsidian_semantic.indexer import VaultIndexer, make_embedding_text
 
 app = typer.Typer(
     name="obsidian-semantic",
@@ -149,6 +150,70 @@ def search(
         if result.headers:
             typer.echo(f"Section: {' > '.join(result.headers)}")
         typer.echo(f"\n{result.text[:500]}{'...' if len(result.text) > 500 else ''}")
+
+
+@app.command()
+def related(
+    note_path: str = typer.Argument(..., help="Path to note (relative to vault root)."),
+    limit: int = typer.Option(10, "--limit", "-n", help="Maximum related notes."),
+    vault: Path | None = typer.Option(
+        None, "--vault", "-v", help="Path to Obsidian vault."
+    ),
+) -> None:
+    """Find notes related to a given note."""
+    vault_path = _get_vault_path(vault)
+    config = load_config(vault_path)
+    db_path = _get_db_path(config.database, vault_path)
+
+    embedder = config.create_embedder()
+    db = SemanticDB(db_path, dimension=embedder.dimension)
+
+    # Resolve to relative path from vault root
+    note_abs = vault_path / note_path
+    if not note_abs.exists():
+        typer.echo(f"Note not found: {note_path}")
+        raise typer.Exit(1)
+    rel_path = str(note_abs.relative_to(vault_path))
+
+    # Try to get existing chunks from the index
+    chunks = db.get_by_file(rel_path)
+
+    if chunks:
+        # Use existing vectors
+        query_vectors = [chunk.vector for chunk in chunks]
+    else:
+        # Read file, chunk, and embed on the fly
+        content = note_abs.read_text()
+        title = note_abs.stem
+        metadata, body = parse_note(content, rel_path)
+        note_chunks = list(chunk_note(body, rel_path, title, metadata))
+        if not note_chunks:
+            typer.echo("No related notes found.")
+            return
+        texts = [make_embedding_text(c) for c in note_chunks]
+        query_vectors = embedder.embed(texts)
+
+    # Search for each chunk vector, collect results
+    all_results: dict[str, SearchResult] = {}
+    for vector in query_vectors:
+        results = db.search(vector, limit=limit, exclude_file=rel_path)
+        for r in results:
+            if r.file_path not in all_results or r.score > all_results[r.file_path].score:
+                all_results[r.file_path] = r
+
+    if not all_results:
+        typer.echo("No related notes found.")
+        return
+
+    # Sort by score descending, take top limit
+    sorted_results = sorted(all_results.values(), key=lambda r: r.score, reverse=True)[:limit]
+
+    for i, result in enumerate(sorted_results, 1):
+        typer.echo(f"\n--- {i}. {result.title} (score: {result.score:.3f}) ---")
+        typer.echo(f"File: {result.file_path}")
+        if result.headers:
+            typer.echo(f"Section: {' > '.join(result.headers)}")
+        typer.echo(f"\n{result.text[:300]}{'...' if len(result.text) > 300 else ''}")
 
 
 @app.command()

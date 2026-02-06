@@ -245,6 +245,107 @@ class TestConfigureCommand:
             assert "/some/path" in content
 
 
+class TestRelatedCommand:
+    """Test the related command."""
+
+    def test_related_indexed_note(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock, mock_embedder: Mock
+    ):
+        """Related with an indexed note uses existing vectors, no embed call."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            # Index first
+            runner.invoke(app, ["index", "--vault", str(vault_path)])
+
+            # Reset embed call count after indexing
+            mock_embedder.embed.reset_mock()
+
+            # Run related on an indexed note
+            result = runner.invoke(
+                app, ["related", "note1.md", "--vault", str(vault_path)]
+            )
+
+            assert result.exit_code == 0
+            # Should NOT have called embed (vectors already in DB)
+            mock_embedder.embed.assert_not_called()
+            # Should show results (note2.md is the only other note)
+            assert "note2.md" in result.output
+
+    def test_related_unindexed_note(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock, mock_embedder: Mock
+    ):
+        """Related with an unindexed note reads the file and embeds on the fly."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            # Index only note1.md by indexing full vault then deleting note2 from index
+            runner.invoke(app, ["index", "--vault", str(vault_path)])
+
+            # Add a third note that is NOT indexed
+            (vault_path / "note3.md").write_text("# Note Three\n\nNew unindexed content.\n")
+
+            mock_embedder.embed.reset_mock()
+
+            result = runner.invoke(
+                app, ["related", "note3.md", "--vault", str(vault_path)]
+            )
+
+            assert result.exit_code == 0
+            # Should have called embed (note3 not in index)
+            mock_embedder.embed.assert_called()
+
+    def test_related_deduplicates_results(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """Same note from multiple chunk searches appears only once in output."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            # Index the vault
+            runner.invoke(app, ["index", "--vault", str(vault_path)])
+
+            result = runner.invoke(
+                app, ["related", "note1.md", "--vault", str(vault_path)]
+            )
+
+            assert result.exit_code == 0
+            # note2.md should appear at most once in the output
+            assert result.output.count("note2.md") == 1
+
+    def test_related_excludes_source_note(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """Related should not show the source note itself."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            runner.invoke(app, ["index", "--vault", str(vault_path)])
+
+            result = runner.invoke(
+                app, ["related", "note1.md", "--vault", str(vault_path)]
+            )
+
+            assert result.exit_code == 0
+            # The source note should not appear in results
+            assert "note1.md" not in result.output
+
+    def test_related_no_results(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """Related on empty index returns gracefully."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app, ["related", "note1.md", "--vault", str(vault_path)]
+            )
+
+            assert result.exit_code == 0
+            assert "no related notes" in result.output.lower()
+
+    def test_related_file_not_found(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """Related with nonexistent note shows error."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app, ["related", "nonexistent.md", "--vault", str(vault_path)]
+            )
+
+            assert result.exit_code != 0 or "not found" in result.output.lower()
+
+
 class TestHelpOutput:
     """Test help output for commands."""
 
@@ -255,6 +356,7 @@ class TestHelpOutput:
         assert result.exit_code == 0
         assert "index" in result.output
         assert "search" in result.output
+        assert "related" in result.output
         assert "status" in result.output
         assert "configure" in result.output
 
