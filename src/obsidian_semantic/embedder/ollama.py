@@ -105,12 +105,14 @@ class OllamaEmbedder(Embedder):
 
     def embed_document(self, texts: list[str]) -> list[list[float]]:
         """Embed texts as documents, prepending document_prefix if configured."""
-        if self._document_prefix:
-            texts = [self._document_prefix + t for t in texts]
+        if self._document_prefix is not None:
+            prefixed = [self._document_prefix + t for t in texts]
+            return self.embed(prefixed)
         return self.embed(texts)
 
     def embed_query(self, texts: list[str]) -> list[list[float]]:
         """Embed texts as queries, prepending query_prefix if configured."""
-        if self._query_prefix:
-            texts = [self._query_prefix + t for t in texts]
+        if self._query_prefix is not None:
+            prefixed = [self._query_prefix + t for t in texts]
+            return self.embed(prefixed)
         return self.embed(texts)

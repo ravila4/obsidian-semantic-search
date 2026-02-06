@@ -34,8 +34,9 @@ class GeminiEmbedder(Embedder):
             model: Gemini model name for embeddings.
             dimension: Embedding vector dimension.
             batch_size: Number of texts to process per API call.
-            task_type: Task type for embeddings (RETRIEVAL_DOCUMENT,
-                RETRIEVAL_QUERY, SEMANTIC_SIMILARITY, CLASSIFICATION, CLUSTERING).
+            task_type: Default task type for embed(). The embed_query() and
+                embed_document() methods override this with RETRIEVAL_QUERY
+                and RETRIEVAL_DOCUMENT respectively.
             timeout: Request timeout in seconds.
         """
         self._api_key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get(

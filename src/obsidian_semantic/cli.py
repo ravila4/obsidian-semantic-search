@@ -193,7 +193,8 @@ def related(
         texts = [make_embedding_text(c) for c in note_chunks]
         query_vectors = embedder.embed_document(texts)
 
-    # Search for each chunk vector, collect results
+    # Doc-to-doc similarity: find notes whose embeddings are nearest to
+    # the source note's chunk embeddings (not a free-text query).
     all_results: dict[str, SearchResult] = {}
     for vector in query_vectors:
         results = db.search(vector, limit=limit, exclude_file=rel_path)
