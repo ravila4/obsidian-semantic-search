@@ -41,3 +41,19 @@ class Embedder(ABC):
             String identifying the embedding model.
         """
         ...
+
+    def embed_document(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for document texts (indexing).
+
+        Override in subclasses to apply document-specific formatting
+        (e.g., text prefixes, API task types). Default: calls embed().
+        """
+        return self.embed(texts)
+
+    def embed_query(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for query texts (searching).
+
+        Override in subclasses to apply query-specific formatting
+        (e.g., text prefixes, API task types). Default: calls embed().
+        """
+        return self.embed(texts)

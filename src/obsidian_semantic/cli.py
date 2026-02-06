@@ -131,7 +131,7 @@ def search(
     db = SemanticDB(db_path, dimension=embedder.dimension)
 
     # Generate query embedding
-    query_vector = embedder.embed([query])[0]
+    query_vector = embedder.embed_query([query])[0]
 
     results = db.search(
         query_vector=query_vector,
@@ -191,9 +191,10 @@ def related(
             typer.echo("No related notes found.")
             return
         texts = [make_embedding_text(c) for c in note_chunks]
-        query_vectors = embedder.embed(texts)
+        query_vectors = embedder.embed_document(texts)
 
-    # Search for each chunk vector, collect results
+    # Doc-to-doc similarity: find notes whose embeddings are nearest to
+    # the source note's chunk embeddings (not a free-text query).
     all_results: dict[str, SearchResult] = {}
     for vector in query_vectors:
         results = db.search(vector, limit=limit, exclude_file=rel_path)

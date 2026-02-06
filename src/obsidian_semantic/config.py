@@ -27,6 +27,9 @@ class EmbedderConfig:
     # Gemini-specific
     api_key: str | None = None
     task_type: str | None = None
+    # Instruction-aware model prefixes (Ollama)
+    query_prefix: str | None = None
+    document_prefix: str | None = None
 
 
 @dataclass
@@ -55,6 +58,10 @@ class Config:
 
             if self.embedder.endpoint:
                 kwargs["endpoint"] = self.embedder.endpoint
+            if self.embedder.query_prefix is not None:
+                kwargs["query_prefix"] = self.embedder.query_prefix
+            if self.embedder.document_prefix is not None:
+                kwargs["document_prefix"] = self.embedder.document_prefix
             return OllamaEmbedder(**kwargs)
 
         elif self.embedder.type == "gemini":
@@ -132,6 +139,10 @@ def _merge_yaml_into_config(config: Config, yaml_path: Path) -> Config:
             config.embedder.api_key = emb["api_key"]
         if "task_type" in emb:
             config.embedder.task_type = emb["task_type"]
+        if "query_prefix" in emb:
+            config.embedder.query_prefix = emb["query_prefix"]
+        if "document_prefix" in emb:
+            config.embedder.document_prefix = emb["document_prefix"]
 
     # Merge other settings
     if "database" in data:

@@ -145,6 +145,49 @@ embedder:
         assert config.embedder.type == "ollama"
 
 
+class TestPrefixConfig:
+    """Test query_prefix and document_prefix configuration."""
+
+    def test_prefix_fields_default_to_none(self):
+        """Prefix fields should be None by default."""
+        config = Config()
+        assert config.embedder.query_prefix is None
+        assert config.embedder.document_prefix is None
+
+    def test_prefixes_loaded_from_yaml(self, tmp_path: Path):
+        """Should load prefix strings from YAML config."""
+        config_file = tmp_path / ".obsidian-semantic.yaml"
+        config_file.write_text("""
+embedder:
+  type: ollama
+  model: qwen3-embedding:8b
+  query_prefix: "Instruct: Retrieve relevant notes\\nQuery: "
+  document_prefix: ""
+""")
+        config = load_config(vault_path=tmp_path)
+        # YAML interprets \\n as literal newline
+        assert config.embedder.query_prefix == "Instruct: Retrieve relevant notes\nQuery: "
+        assert config.embedder.document_prefix == ""
+
+    def test_prefixes_passed_to_ollama_embedder(self, tmp_path: Path):
+        """create_embedder() should pass prefixes to OllamaEmbedder."""
+        config_file = tmp_path / ".obsidian-semantic.yaml"
+        config_file.write_text("""
+embedder:
+  type: ollama
+  model: nomic-embed-text
+  query_prefix: "search_query: "
+  document_prefix: "search_document: "
+""")
+        config = load_config(vault_path=tmp_path)
+        embedder = config.create_embedder()
+
+        from obsidian_semantic.embedder import OllamaEmbedder
+        assert isinstance(embedder, OllamaEmbedder)
+        assert embedder._query_prefix == "search_query: "
+        assert embedder._document_prefix == "search_document: "
+
+
 class TestCreateEmbedderFromConfig:
     """Test creating embedder instances from config."""
 

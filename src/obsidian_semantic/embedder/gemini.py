@@ -34,8 +34,9 @@ class GeminiEmbedder(Embedder):
             model: Gemini model name for embeddings.
             dimension: Embedding vector dimension.
             batch_size: Number of texts to process per API call.
-            task_type: Task type for embeddings (RETRIEVAL_DOCUMENT,
-                RETRIEVAL_QUERY, SEMANTIC_SIMILARITY, CLASSIFICATION, CLUSTERING).
+            task_type: Default task type for embed(). The embed_query() and
+                embed_document() methods override this with RETRIEVAL_QUERY
+                and RETRIEVAL_DOCUMENT respectively.
             timeout: Request timeout in seconds.
         """
         self._api_key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get(
@@ -65,10 +66,25 @@ class GeminiEmbedder(Embedder):
         return self._model
 
     def embed(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings using the configured task_type."""
+        return self._embed_with_task_type(texts, self._task_type)
+
+    def embed_document(self, texts: list[str]) -> list[list[float]]:
+        """Embed texts as documents using RETRIEVAL_DOCUMENT task type."""
+        return self._embed_with_task_type(texts, "RETRIEVAL_DOCUMENT")
+
+    def embed_query(self, texts: list[str]) -> list[list[float]]:
+        """Embed texts as queries using RETRIEVAL_QUERY task type."""
+        return self._embed_with_task_type(texts, "RETRIEVAL_QUERY")
+
+    def _embed_with_task_type(
+        self, texts: list[str], task_type: str
+    ) -> list[list[float]]:
         """Generate embeddings for texts using Gemini REST API.
 
         Args:
             texts: List of texts to embed.
+            task_type: Gemini task type (RETRIEVAL_DOCUMENT, RETRIEVAL_QUERY, etc).
 
         Returns:
             List of embedding vectors.
@@ -89,7 +105,7 @@ class GeminiEmbedder(Embedder):
                 {
                     "model": self._model,
                     "content": {"parts": [{"text": text}]},
-                    "taskType": self._task_type,
+                    "taskType": task_type,
                 }
                 for text in batch
             ]
