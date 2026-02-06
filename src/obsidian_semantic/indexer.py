@@ -271,7 +271,7 @@ class VaultIndexer:
 
         # Generate embeddings using text that includes title + headers
         texts = [make_embedding_text(chunk) for chunk in chunks]
-        vectors = self._embedder.embed(texts)
+        vectors = self._embedder.embed_document(texts)
 
         # Create records
         now = datetime.now()

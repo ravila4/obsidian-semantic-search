@@ -18,6 +18,8 @@ class OllamaEmbedder(Embedder):
         batch_size: int = 32,
         dimension: int = 768,
         timeout: float = 30.0,
+        query_prefix: str = "",
+        document_prefix: str = "",
     ):
         """Initialize the Ollama embedder.
 
@@ -27,12 +29,16 @@ class OllamaEmbedder(Embedder):
             batch_size: Number of texts to process per batch (for rate limiting).
             dimension: Embedding vector dimension.
             timeout: Request timeout in seconds.
+            query_prefix: Prefix prepended to texts in embed_query().
+            document_prefix: Prefix prepended to texts in embed_document().
         """
         self._model = model
         self._endpoint = endpoint
         self._batch_size = batch_size
         self._dimension = dimension
         self._timeout = timeout
+        self._query_prefix = query_prefix
+        self._document_prefix = document_prefix
         self._client = httpx.Client(timeout=timeout)
 
     @property
@@ -96,3 +102,15 @@ class OllamaEmbedder(Embedder):
                 raise RuntimeError(f"Ollama API error: {e}") from e
 
         return embeddings
+
+    def embed_document(self, texts: list[str]) -> list[list[float]]:
+        """Embed texts as documents, prepending document_prefix if configured."""
+        if self._document_prefix:
+            texts = [self._document_prefix + t for t in texts]
+        return self.embed(texts)
+
+    def embed_query(self, texts: list[str]) -> list[list[float]]:
+        """Embed texts as queries, prepending query_prefix if configured."""
+        if self._query_prefix:
+            texts = [self._query_prefix + t for t in texts]
+        return self.embed(texts)

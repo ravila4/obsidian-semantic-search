@@ -8,6 +8,21 @@ from obsidian_semantic.embedder.base import Embedder
 from obsidian_semantic.embedder.ollama import OllamaEmbedder
 
 
+class _StubEmbedder(Embedder):
+    """Minimal concrete embedder for testing base class behavior."""
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[0.1] * 4 for _ in texts]
+
+    @property
+    def dimension(self) -> int:
+        return 4
+
+    @property
+    def model_name(self) -> str:
+        return "stub"
+
+
 class TestEmbedderProtocol:
     """Test that Embedder is a proper protocol/ABC."""
 
@@ -58,6 +73,18 @@ class TestEmbedderProtocol:
 
         with pytest.raises(TypeError):
             BadEmbedder()
+
+    def test_embed_query_defaults_to_embed(self):
+        """embed_query() should fall back to embed() by default."""
+        embedder = _StubEmbedder()
+        result = embedder.embed_query(["test"])
+        assert result == embedder.embed(["test"])
+
+    def test_embed_document_defaults_to_embed(self):
+        """embed_document() should fall back to embed() by default."""
+        embedder = _StubEmbedder()
+        result = embedder.embed_document(["test"])
+        assert result == embedder.embed(["test"])
 
 
 class TestOllamaEmbedder:
@@ -232,6 +259,82 @@ class TestOllamaEmbedder:
         assert mock_client.post.call_count == 3
 
 
+class TestOllamaEmbedderPrefixes:
+    """Test query/document prefix support for instruction-aware models."""
+
+    @patch("obsidian_semantic.embedder.ollama.httpx.Client")
+    def test_embed_query_prepends_prefix(self, mock_client_cls: Mock):
+        """embed_query() should prepend query_prefix to each text."""
+        mock_response = Mock()
+        mock_response.json.return_value = {"embeddings": [[0.1] * 768]}
+        mock_response.raise_for_status = Mock()
+        mock_client = MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        embedder = OllamaEmbedder(
+            query_prefix="Instruct: Retrieve relevant notes\nQuery: "
+        )
+        embedder.embed_query(["python testing"])
+
+        call_args = mock_client.post.call_args
+        sent_input = call_args[1]["json"]["input"]
+        assert sent_input == ["Instruct: Retrieve relevant notes\nQuery: python testing"]
+
+    @patch("obsidian_semantic.embedder.ollama.httpx.Client")
+    def test_embed_document_prepends_prefix(self, mock_client_cls: Mock):
+        """embed_document() should prepend document_prefix to each text."""
+        mock_response = Mock()
+        mock_response.json.return_value = {"embeddings": [[0.1] * 768]}
+        mock_response.raise_for_status = Mock()
+        mock_client = MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        embedder = OllamaEmbedder(document_prefix="search_document: ")
+        embedder.embed_document(["some note content"])
+
+        call_args = mock_client.post.call_args
+        sent_input = call_args[1]["json"]["input"]
+        assert sent_input == ["search_document: some note content"]
+
+    @patch("obsidian_semantic.embedder.ollama.httpx.Client")
+    def test_no_prefix_passes_raw_text(self, mock_client_cls: Mock):
+        """Without prefixes, embed_query/embed_document should pass raw text."""
+        mock_response = Mock()
+        mock_response.json.return_value = {"embeddings": [[0.1] * 768]}
+        mock_response.raise_for_status = Mock()
+        mock_client = MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        embedder = OllamaEmbedder()  # no prefixes
+
+        embedder.embed_query(["test query"])
+        sent_input = mock_client.post.call_args[1]["json"]["input"]
+        assert sent_input == ["test query"]
+
+        embedder.embed_document(["test doc"])
+        sent_input = mock_client.post.call_args[1]["json"]["input"]
+        assert sent_input == ["test doc"]
+
+    @patch("obsidian_semantic.embedder.ollama.httpx.Client")
+    def test_prefix_applied_to_all_texts_in_batch(self, mock_client_cls: Mock):
+        """Prefix should be applied to every text in a batch."""
+        mock_response = Mock()
+        mock_response.json.return_value = {"embeddings": [[0.1] * 768] * 3}
+        mock_response.raise_for_status = Mock()
+        mock_client = MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        embedder = OllamaEmbedder(query_prefix="search_query: ")
+        embedder.embed_query(["a", "b", "c"])
+
+        sent_input = mock_client.post.call_args[1]["json"]["input"]
+        assert sent_input == ["search_query: a", "search_query: b", "search_query: c"]
+
+
 class TestGeminiEmbedder:
     """Test the Gemini embedder implementation."""
 
@@ -327,6 +430,38 @@ class TestGeminiEmbedder:
             os.environ.pop("GOOGLE_API_KEY", None)
             with pytest.raises(ValueError, match="API key"):
                 GeminiEmbedder()
+
+    @patch("obsidian_semantic.embedder.gemini.httpx.post")
+    def test_embed_query_uses_retrieval_query(self, mock_post: Mock):
+        """embed_query() should use RETRIEVAL_QUERY task type."""
+        from obsidian_semantic.embedder.gemini import GeminiEmbedder
+
+        mock_response = Mock()
+        mock_response.json.return_value = {"embeddings": [{"values": [0.1] * 768}]}
+        mock_response.raise_for_status = Mock()
+        mock_post.return_value = mock_response
+
+        embedder = GeminiEmbedder(api_key="test-key")
+        embedder.embed_query(["search terms"])
+
+        request_body = mock_post.call_args[1]["json"]["requests"][0]
+        assert request_body["taskType"] == "RETRIEVAL_QUERY"
+
+    @patch("obsidian_semantic.embedder.gemini.httpx.post")
+    def test_embed_document_uses_retrieval_document(self, mock_post: Mock):
+        """embed_document() should use RETRIEVAL_DOCUMENT task type."""
+        from obsidian_semantic.embedder.gemini import GeminiEmbedder
+
+        mock_response = Mock()
+        mock_response.json.return_value = {"embeddings": [{"values": [0.1] * 768}]}
+        mock_response.raise_for_status = Mock()
+        mock_post.return_value = mock_response
+
+        embedder = GeminiEmbedder(api_key="test-key")
+        embedder.embed_document(["note content"])
+
+        request_body = mock_post.call_args[1]["json"]["requests"][0]
+        assert request_body["taskType"] == "RETRIEVAL_DOCUMENT"
 
 
 class TestEmbedderFactory:

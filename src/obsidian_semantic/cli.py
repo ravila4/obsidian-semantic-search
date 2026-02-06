@@ -131,7 +131,7 @@ def search(
     db = SemanticDB(db_path, dimension=embedder.dimension)
 
     # Generate query embedding
-    query_vector = embedder.embed([query])[0]
+    query_vector = embedder.embed_query([query])[0]
 
     results = db.search(
         query_vector=query_vector,
@@ -191,7 +191,7 @@ def related(
             typer.echo("No related notes found.")
             return
         texts = [make_embedding_text(c) for c in note_chunks]
-        query_vectors = embedder.embed(texts)
+        query_vectors = embedder.embed_document(texts)
 
     # Search for each chunk vector, collect results
     all_results: dict[str, SearchResult] = {}

@@ -47,6 +47,9 @@ def mock_embedder() -> Mock:
     embedder.dimension = 768
     embedder.model_name = "test-model"
     embedder.embed.side_effect = lambda texts: [[0.1] * 768 for _ in texts]
+    # Delegate embed_document/embed_query to embed, mirroring base class
+    embedder.embed_document.side_effect = lambda texts: embedder.embed(texts)
+    embedder.embed_query.side_effect = lambda texts: embedder.embed(texts)
     return embedder
 
 

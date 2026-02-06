@@ -65,10 +65,25 @@ class GeminiEmbedder(Embedder):
         return self._model
 
     def embed(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings using the configured task_type."""
+        return self._embed_with_task_type(texts, self._task_type)
+
+    def embed_document(self, texts: list[str]) -> list[list[float]]:
+        """Embed texts as documents using RETRIEVAL_DOCUMENT task type."""
+        return self._embed_with_task_type(texts, "RETRIEVAL_DOCUMENT")
+
+    def embed_query(self, texts: list[str]) -> list[list[float]]:
+        """Embed texts as queries using RETRIEVAL_QUERY task type."""
+        return self._embed_with_task_type(texts, "RETRIEVAL_QUERY")
+
+    def _embed_with_task_type(
+        self, texts: list[str], task_type: str
+    ) -> list[list[float]]:
         """Generate embeddings for texts using Gemini REST API.
 
         Args:
             texts: List of texts to embed.
+            task_type: Gemini task type (RETRIEVAL_DOCUMENT, RETRIEVAL_QUERY, etc).
 
         Returns:
             List of embedding vectors.
@@ -89,7 +104,7 @@ class GeminiEmbedder(Embedder):
                 {
                     "model": self._model,
                     "content": {"parts": [{"text": text}]},
-                    "taskType": self._task_type,
+                    "taskType": task_type,
                 }
                 for text in batch
             ]
