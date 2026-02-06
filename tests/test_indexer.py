@@ -1,12 +1,11 @@
 """Tests for the vault indexer."""
 
-from datetime import datetime
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
-from obsidian_semantic.indexer import VaultIndexer, IndexResult
+from obsidian_semantic.indexer import VaultIndexer
 
 
 @pytest.fixture
@@ -341,3 +340,66 @@ class TestProgressReporting:
         # Should have called progress for all files (including failed ones)
         assert len(progress_calls) == 3  # Total files in vault
         assert len(result.errors) > 0
+
+
+class TestFrontmatterOnlyFiles:
+    """Test handling of frontmatter-only stub files."""
+
+    @pytest.fixture
+    def vault_with_stubs(self, vault_path: Path) -> Path:
+        """Add frontmatter-only stub files to the vault."""
+        (vault_path / "stub1.md").write_text("""\
+---
+tags:
+  - todo
+---
+""")
+        (vault_path / "stub2.md").write_text("""\
+---
+tags:
+  - recipe
+---
+""")
+        return vault_path
+
+    def test_index_tracks_skipped_files(
+        self, vault_with_stubs: Path, db_path: Path, mock_embedder: Mock
+    ):
+        """Index should report files skipped due to empty body."""
+        mock_embedder.embed.side_effect = lambda texts: [[0.1] * 768 for _ in texts]
+
+        indexer = VaultIndexer(vault_with_stubs, db_path, mock_embedder)
+        result = indexer.index()
+
+        # 3 real notes processed, 2 stubs skipped
+        assert result.files_processed == 3
+        assert result.files_skipped == 2
+
+    def test_pending_changes_excludes_empty_files(
+        self, vault_with_stubs: Path, db_path: Path, mock_embedder: Mock
+    ):
+        """Pending changes should not include frontmatter-only files."""
+        mock_embedder.embed.side_effect = lambda texts: [[0.1] * 768 for _ in texts]
+
+        indexer = VaultIndexer(vault_with_stubs, db_path, mock_embedder)
+
+        # Before indexing, stubs should NOT appear as pending
+        pending = indexer.get_pending_changes()
+        stub_paths = {"stub1.md", "stub2.md"}
+        pending_paths = set(pending.new_files)
+        assert not stub_paths & pending_paths, f"Stubs in pending: {stub_paths & pending_paths}"
+
+        # Real files should still appear
+        assert len(pending.new_files) == 3
+
+    def test_stubs_not_perpetually_new_after_index(
+        self, vault_with_stubs: Path, db_path: Path, mock_embedder: Mock
+    ):
+        """After indexing, stubs should not show as pending."""
+        mock_embedder.embed.side_effect = lambda texts: [[0.1] * 768 for _ in texts]
+
+        indexer = VaultIndexer(vault_with_stubs, db_path, mock_embedder)
+        indexer.index()
+
+        pending = indexer.get_pending_changes()
+        assert not pending.has_changes

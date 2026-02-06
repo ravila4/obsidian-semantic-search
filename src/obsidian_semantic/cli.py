@@ -137,6 +137,8 @@ def index(
     result = indexer.index(full=full, progress_callback=show_progress)
 
     typer.echo(f"Processed {result.files_processed} files")
+    if result.files_skipped:
+        typer.echo(f"Skipped {result.files_skipped} files (no content)")
     if result.files_deleted:
         typer.echo(f"Removed {result.files_deleted} deleted files")
     if result.errors:
