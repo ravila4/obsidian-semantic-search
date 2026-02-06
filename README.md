@@ -49,3 +49,56 @@ obsidian-semantic status
 ### Options
 
 All commands accept `--vault <path>` to specify the vault. Alternatively, set `OBSIDIAN_VAULT` or configure a default with `obsidian-semantic configure --vault <path>`.
+
+## Embedding Backends
+
+Configuration lives in `~/.config/obsidian-semantic/config.yaml`. You can also place a `.obsidian-semantic.yaml` in your vault root to override per-vault.
+
+After changing the embedder or model, reindex with `obsidian-semantic index --full`.
+
+### Ollama with Nomic (default)
+
+Local embeddings with [nomic-embed-text](https://ollama.com/library/nomic-embed-text) (768 dimensions). Uses `search_query:`/`search_document:` prefixes for asymmetric retrieval.
+
+```yaml
+vault: ~/Documents/Obsidian-Notes
+embedder:
+  type: ollama
+  model: nomic-embed-text
+  dimension: 768
+  query_prefix: "search_query: "
+  document_prefix: "search_document: "
+```
+
+```bash
+ollama pull nomic-embed-text
+```
+
+### Ollama with Qwen3-embedding
+
+Higher-quality embeddings with [qwen3-embedding](https://ollama.com/library/qwen3-embedding) (4096 dimensions). Uses an instruction prefix for queries to improve retrieval.
+
+```yaml
+vault: ~/Documents/Obsidian-Notes
+embedder:
+  type: ollama
+  model: qwen3-embedding:8b
+  dimension: 4096
+  query_prefix: "Instruct: Given a search query, retrieve relevant notes\nQuery: "
+```
+
+```bash
+ollama pull qwen3-embedding:8b
+```
+
+### Gemini
+
+Cloud embeddings via Google's [gemini-embedding-001](https://ai.google.dev/gemini-api/docs/embeddings) (3072 dimensions). Handles query vs. document task types automatically -- no prefix config needed. Requires a `GEMINI_API_KEY` environment variable.
+
+```yaml
+vault: ~/Documents/Obsidian-Notes
+embedder:
+  type: gemini
+  model: gemini-embedding-001
+  dimension: 3072
+```
