@@ -264,6 +264,72 @@ class TestExcludeFile:
         assert len(file_paths) == 2  # Both python.md and rust.md
 
 
+class TestBulkFileMetadata:
+    """Test bulk file metadata retrieval."""
+
+    def test_get_all_file_metadata(self, db: SemanticDB, sample_chunks: list[ChunkRecord]):
+        """Should return correct file_path -> indexed_at mapping."""
+        db.upsert_chunks(sample_chunks)
+
+        result = db.get_all_file_metadata()
+
+        assert isinstance(result, dict)
+        assert len(result) == 2  # Two unique files
+        assert "notes/python.md" in result
+        assert "notes/rust.md" in result
+        # indexed_at should be a datetime
+        assert isinstance(result["notes/python.md"], datetime)
+        assert isinstance(result["notes/rust.md"], datetime)
+
+    def test_get_all_file_metadata_empty_db(self, db: SemanticDB):
+        """Should return empty dict for empty database."""
+        result = db.get_all_file_metadata()
+
+        assert result == {}
+
+    def test_get_all_file_metadata_deduplicates(self, db: SemanticDB):
+        """Should take max indexed_at when file has multiple chunks."""
+        earlier = datetime(2025, 1, 1, 12, 0, 0)
+        later = datetime(2025, 1, 1, 12, 0, 1)
+
+        chunks = [
+            ChunkRecord(
+                id="notes/test.md#chunk1",
+                file_path="notes/test.md",
+                title="Test",
+                headers=["A"],
+                text="First chunk",
+                start_line=1,
+                end_line=5,
+                tags=[],
+                created_at=earlier,
+                modified_at=earlier,
+                indexed_at=earlier,
+                vector=[0.1] * 768,
+            ),
+            ChunkRecord(
+                id="notes/test.md#chunk2",
+                file_path="notes/test.md",
+                title="Test",
+                headers=["B"],
+                text="Second chunk",
+                start_line=6,
+                end_line=10,
+                tags=[],
+                created_at=later,
+                modified_at=later,
+                indexed_at=later,
+                vector=[0.2] * 768,
+            ),
+        ]
+        db.upsert_chunks(chunks)
+
+        result = db.get_all_file_metadata()
+
+        assert len(result) == 1
+        assert result["notes/test.md"] == later
+
+
 class TestStats:
     """Test index statistics."""
 

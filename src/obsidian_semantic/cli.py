@@ -73,6 +73,38 @@ def status(
     if stats.last_indexed:
         typer.echo(f"Last indexed: {stats.last_indexed.strftime('%Y-%m-%d %H:%M:%S')}")
 
+    # Show pending changes
+    indexer = VaultIndexer(
+        vault_path=vault_path,
+        db_path=db_path,
+        embedder=embedder,
+        ignore_patterns=config.ignore,
+    )
+    pending = indexer.get_pending_changes()
+
+    if pending.has_changes:
+        typer.echo(f"\nPending changes ({pending.total_count} files):")
+        if pending.new_files:
+            typer.echo(f"  New: {len(pending.new_files)} files")
+            for file_path in pending.new_files[:5]:
+                typer.echo(f"    - {file_path}")
+            if len(pending.new_files) > 5:
+                typer.echo(f"    ... and {len(pending.new_files) - 5} more")
+        if pending.modified_files:
+            typer.echo(f"  Modified: {len(pending.modified_files)} files")
+            for file_path in pending.modified_files[:5]:
+                typer.echo(f"    - {file_path}")
+            if len(pending.modified_files) > 5:
+                typer.echo(f"    ... and {len(pending.modified_files) - 5} more")
+        if pending.deleted_files:
+            typer.echo(f"  Deleted: {len(pending.deleted_files)} files")
+            for file_path in pending.deleted_files[:5]:
+                typer.echo(f"    - {file_path}")
+            if len(pending.deleted_files) > 5:
+                typer.echo(f"    ... and {len(pending.deleted_files) - 5} more")
+    else:
+        typer.echo("\nAll files up to date.")
+
 
 @app.command()
 def index(
@@ -98,9 +130,15 @@ def index(
     mode = "full" if full else "incremental"
     typer.echo(f"Indexing vault ({mode})...")
 
-    result = indexer.index(full=full)
+    def show_progress(current: int, total: int, file_path: str) -> None:
+        """Display progress for each file."""
+        typer.echo(f"  [{current}/{total}] {file_path}")
+
+    result = indexer.index(full=full, progress_callback=show_progress)
 
     typer.echo(f"Processed {result.files_processed} files")
+    if result.files_skipped:
+        typer.echo(f"Skipped {result.files_skipped} files (no content)")
     if result.files_deleted:
         typer.echo(f"Removed {result.files_deleted} deleted files")
     if result.errors:

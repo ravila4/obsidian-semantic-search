@@ -102,3 +102,16 @@ embedder:
   model: gemini-embedding-001
   dimension: 3072
 ```
+
+### Advanced Options
+
+**Timeout Configuration**
+
+The embedder request timeout (default: 30 seconds) can be increased for large files or slower models:
+
+```yaml
+embedder:
+  timeout: 60.0  # seconds
+```
+
+If you see timeout errors during indexing, try increasing this value. Very large notes with extensive JSON or code blocks may need 60-120 seconds.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,7 @@ class IndexResult:
     """Result of an indexing operation."""
 
     files_processed: int = 0
+    files_skipped: int = 0
     files_deleted: int = 0
     chunks_created: int = 0
     errors: list[str] = field(default_factory=list)
@@ -34,6 +36,25 @@ class IndexResult:
         if self.started_at and self.finished_at:
             return (self.finished_at - self.started_at).total_seconds()
         return 0.0
+
+
+@dataclass
+class PendingChanges:
+    """Summary of files that need indexing."""
+
+    new_files: list[str] = field(default_factory=list)
+    modified_files: list[str] = field(default_factory=list)
+    deleted_files: list[str] = field(default_factory=list)
+
+    @property
+    def has_changes(self) -> bool:
+        """Return True if there are any pending changes."""
+        return bool(self.new_files or self.modified_files or self.deleted_files)
+
+    @property
+    def total_count(self) -> int:
+        """Return total number of pending changes."""
+        return len(self.new_files) + len(self.modified_files) + len(self.deleted_files)
 
 
 # Default patterns to ignore
@@ -114,12 +135,18 @@ class VaultIndexer:
 
         self._db = SemanticDB(db_path, dimension=embedder.dimension)
 
-    def index(self, full: bool = False) -> IndexResult:
+    def index(
+        self,
+        full: bool = False,
+        progress_callback: Callable[[int, int, str], None] | None = None,
+    ) -> IndexResult:
         """Index the vault.
 
         Args:
             full: If True, reindex all files. If False (default),
                 only process new/modified files.
+            progress_callback: Optional callback function called for each file.
+                Receives (current, total, file_path) arguments.
 
         Returns:
             IndexResult with statistics about the operation.
@@ -140,12 +167,20 @@ class VaultIndexer:
             to_delete = changes["deleted"]
 
         # Process files
-        for file_path in to_process:
+        total_files = len(to_process)
+        for idx, file_path in enumerate(to_process, start=1):
+            rel_path = str(file_path.relative_to(self._vault_path))
+            if progress_callback:
+                progress_callback(idx, total_files, rel_path)
+
             try:
-                self._index_file(file_path)
-                result.files_processed += 1
+                indexed = self._index_file(file_path)
+                if indexed:
+                    result.files_processed += 1
+                else:
+                    result.files_skipped += 1
             except Exception as e:
-                result.errors.append(f"{file_path}: {e}")
+                result.errors.append(f"{rel_path}: {e}")
 
         # Remove deleted files
         for rel_path in to_delete:
@@ -158,6 +193,47 @@ class VaultIndexer:
         result.finished_at = datetime.now()
 
         return result
+
+    def get_pending_changes(self) -> PendingChanges:
+        """Get summary of files that need indexing.
+
+        Filters out files with no indexable content (e.g., frontmatter-only stubs).
+
+        Returns:
+            PendingChanges with lists of new, modified, and deleted files.
+        """
+        files = list(self._discover_files())
+        changes = self._detect_changes(files)
+
+        return PendingChanges(
+            new_files=[
+                str(f.relative_to(self._vault_path))
+                for f in changes["new"]
+                if self._has_indexable_content(f)
+            ],
+            modified_files=[
+                str(f.relative_to(self._vault_path))
+                for f in changes["modified"]
+                if self._has_indexable_content(f)
+            ],
+            deleted_files=changes["deleted"],
+        )
+
+    def _has_indexable_content(self, file_path: Path) -> bool:
+        """Check if a file has content beyond frontmatter.
+
+        Args:
+            file_path: Absolute path to the file.
+
+        Returns:
+            True if the file has body content that would produce chunks.
+        """
+        try:
+            content = file_path.read_text(encoding="utf-8")
+            _, body = parse_note(content, str(file_path))
+            return bool(body.strip())
+        except Exception:
+            return False
 
     def _discover_files(self) -> Iterator[Path]:
         """Discover all markdown files in the vault.
@@ -203,35 +279,27 @@ class VaultIndexer:
         Returns:
             Dict with 'new', 'modified', and 'deleted' lists.
         """
+        # Single bulk query instead of per-file lookups
+        indexed = self._db.get_all_file_metadata()
+
         new_files: list[Path] = []
         modified_files: list[Path] = []
-
-        # Track which files we've seen
         current_paths = set()
 
         for file_path in files:
             rel_path = str(file_path.relative_to(self._vault_path))
             current_paths.add(rel_path)
 
-            # Check if file is in database
-            meta = self._db.get_file_metadata(rel_path)
-
-            if meta is None:
+            indexed_at = indexed.get(rel_path)
+            if indexed_at is None:
                 new_files.append(file_path)
             else:
-                # Check mtime
                 file_mtime = datetime.fromtimestamp(file_path.stat().st_mtime)
-                if file_mtime > meta.indexed_at:
+                if file_mtime > indexed_at:
                     modified_files.append(file_path)
 
         # Find deleted files
-        stats = self._db.get_stats()
-        if stats.file_count > 0:
-            # Get all indexed file paths
-            all_indexed = self._get_all_indexed_paths()
-            deleted_files = [p for p in all_indexed if p not in current_paths]
-        else:
-            deleted_files = []
+        deleted_files = [p for p in indexed if p not in current_paths]
 
         return {
             "new": new_files,
@@ -239,23 +307,14 @@ class VaultIndexer:
             "deleted": deleted_files,
         }
 
-    def _get_all_indexed_paths(self) -> set[str]:
-        """Get all file paths currently in the index.
-
-        Returns:
-            Set of relative file paths.
-        """
-        # This is a bit inefficient, but works for now
-        # Could be optimized with a separate metadata table
-        table = self._db._table()
-        results = table.search().select(["file_path"]).limit(100000).to_list()
-        return {r["file_path"] for r in results}
-
-    def _index_file(self, file_path: Path) -> None:
+    def _index_file(self, file_path: Path) -> bool:
         """Index a single file.
 
         Args:
             file_path: Absolute path to the file.
+
+        Returns:
+            True if chunks were created, False if file had no indexable content.
         """
         rel_path = str(file_path.relative_to(self._vault_path))
         content = file_path.read_text(encoding="utf-8")
@@ -267,7 +326,7 @@ class VaultIndexer:
         chunks = list(chunk_note(body, rel_path, title, metadata))
 
         if not chunks:
-            return
+            return False
 
         # Generate embeddings using text that includes title + headers
         texts = [make_embedding_text(chunk) for chunk in chunks]
@@ -298,3 +357,4 @@ class VaultIndexer:
         # Delete old chunks for this file, then insert new ones
         self._db.delete_by_file(rel_path)
         self._db.upsert_chunks(records)
+        return True

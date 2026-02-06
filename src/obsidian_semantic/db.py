@@ -301,6 +301,32 @@ class SemanticDB:
 
         return None
 
+    def get_all_file_metadata(self) -> dict[str, datetime]:
+        """Get metadata for all indexed files in a single query.
+
+        Returns:
+            Dict mapping file_path -> indexed_at (max across chunks).
+        """
+        table = self._table()
+
+        try:
+            results = table.search().select(["file_path", "indexed_at"]).limit(100000).to_list()
+        except Exception:
+            return {}
+
+        if not results:
+            return {}
+
+        # Deduplicate: multiple chunks per file, take max indexed_at
+        metadata: dict[str, datetime] = {}
+        for r in results:
+            path = r["file_path"]
+            indexed_at = r["indexed_at"]
+            if path not in metadata or indexed_at > metadata[path]:
+                metadata[path] = indexed_at
+
+        return metadata
+
     def get_stats(self) -> IndexStats:
         """Get index statistics.
 

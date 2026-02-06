@@ -90,6 +90,50 @@ class TestStatusCommand:
             assert result.exit_code == 0
             assert "2 files" in result.output or "files" in result.output.lower()
 
+    def test_status_shows_pending_changes(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """Status shows files that need indexing."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            # Index the vault
+            runner.invoke(app, ["index", "--vault", str(vault_path)])
+
+            # Add a new file
+            (vault_path / "note3.md").write_text("# Note Three\n\nNew content.")
+
+            # Check status
+            result = runner.invoke(app, ["status", "--vault", str(vault_path)])
+
+            assert result.exit_code == 0
+            # Should show pending changes
+            assert "pending" in result.output.lower() or "new" in result.output.lower()
+            assert "note3.md" in result.output
+
+    def test_status_shows_modified_files(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """Status shows files modified since last index."""
+        import time
+        import os
+
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            # Index the vault
+            runner.invoke(app, ["index", "--vault", str(vault_path)])
+
+            # Modify a file
+            time.sleep(0.01)
+            note1 = vault_path / "note1.md"
+            note1.write_text(note1.read_text() + "\n\nModified content.")
+            os.utime(note1, None)  # Touch to ensure mtime changes
+
+            # Check status
+            result = runner.invoke(app, ["status", "--vault", str(vault_path)])
+
+            assert result.exit_code == 0
+            # Should show modified file
+            assert "modified" in result.output.lower() or "pending" in result.output.lower()
+            assert "note1.md" in result.output
+
 
 class TestIndexCommand:
     """Test the index command."""
