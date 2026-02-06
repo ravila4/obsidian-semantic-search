@@ -241,8 +241,8 @@ class TestGeminiEmbedder:
 
         embedder = GeminiEmbedder(api_key="test-key")
 
-        assert embedder.model_name == "models/text-embedding-004"
-        assert embedder.dimension == 768
+        assert embedder.model_name == "models/gemini-embedding-001"
+        assert embedder.dimension == 3072
 
     def test_custom_configuration(self):
         """Should accept custom config."""

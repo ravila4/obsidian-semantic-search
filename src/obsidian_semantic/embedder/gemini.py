@@ -10,7 +10,7 @@ from obsidian_semantic.embedder.base import Embedder
 class GeminiEmbedder(Embedder):
     """Embedder using Google's Gemini API via REST.
 
-    Default model is text-embedding-004 (768 dimensions).
+    Default model is gemini-embedding-001 (3072 dimensions).
     Requires GEMINI_API_KEY or GOOGLE_API_KEY environment variable,
     or api_key passed directly.
     """
@@ -20,8 +20,8 @@ class GeminiEmbedder(Embedder):
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "models/text-embedding-004",
-        dimension: int = 768,
+        model: str = "models/gemini-embedding-001",
+        dimension: int = 3072,
         batch_size: int = 100,
         task_type: str = "RETRIEVAL_DOCUMENT",
         timeout: float = 30.0,
