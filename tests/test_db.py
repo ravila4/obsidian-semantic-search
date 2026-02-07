@@ -330,6 +330,28 @@ class TestBulkFileMetadata:
         assert result["notes/test.md"] == later
 
 
+class TestGetAllVectors:
+    """Test bulk vector retrieval."""
+
+    def test_get_all_vectors(self, db: SemanticDB, sample_chunks: list[ChunkRecord]):
+        """Should return file_path -> list of vectors mapping."""
+        db.upsert_chunks(sample_chunks)
+
+        result = db.get_all_vectors()
+
+        assert len(result) == 2
+        assert "notes/python.md" in result
+        assert "notes/rust.md" in result
+        assert len(result["notes/python.md"]) == 2  # 2 chunks
+        assert len(result["notes/rust.md"]) == 1
+
+    def test_get_all_vectors_empty_db(self, db: SemanticDB):
+        """Should return empty dict for empty database."""
+        result = db.get_all_vectors()
+
+        assert result == {}
+
+
 class TestStats:
     """Test index statistics."""
 

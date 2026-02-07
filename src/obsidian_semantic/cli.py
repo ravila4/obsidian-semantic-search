@@ -14,6 +14,12 @@ from obsidian_semantic.chunker import chunk_note, parse_note
 from obsidian_semantic.config import load_config
 from obsidian_semantic.db import SearchResult, SemanticDB
 from obsidian_semantic.indexer import VaultIndexer, make_embedding_text
+from obsidian_semantic.links import (
+    build_wikilink_graph,
+    cosine_similarity_matrix,
+    find_suggestions,
+    get_note_embeddings,
+)
 
 app = typer.Typer(
     name="obsidian-semantic",
@@ -327,6 +333,71 @@ def configure(
         yaml.dump(config_data, f, default_flow_style=False)
 
     typer.echo(f"Configuration saved to {config_file}")
+
+
+@app.command("suggest-links")
+def suggest_links(
+    limit: int = typer.Option(20, "--limit", "-n", help="Maximum suggestions."),
+    threshold: float = typer.Option(0.80, "--threshold", "-t", help="Min cosine similarity."),
+    exclude_same_folder: list[str] | None = typer.Option(
+        None, "--exclude-same-folder", help="Skip pairs in this folder (repeatable)."
+    ),
+    vault: Path | None = typer.Option(
+        None, "--vault", "-v", help="Path to Obsidian vault."
+    ),
+) -> None:
+    """Suggest missing wikilinks between semantically similar notes."""
+    vault_path = _get_vault_path(vault)
+    config = load_config(vault_path)
+    db_path = _get_db_path(config.database, vault_path)
+
+    embedder = config.create_embedder()
+    db = SemanticDB(db_path, dimension=embedder.dimension)
+
+    # Merge exclude folders from config and CLI
+    exclude_folders: set[str] = set(config.suggest_links.exclude_same_folder)
+    if exclude_same_folder:
+        exclude_folders.update(exclude_same_folder)
+
+    typer.echo("Loading embeddings from index...")
+    note_embeddings = get_note_embeddings(db)
+    typer.echo(f"  {len(note_embeddings)} notes with embeddings")
+
+    if len(note_embeddings) < 2:
+        typer.echo("Not enough indexed notes to compare.")
+        return
+
+    typer.echo("Scanning vault for wikilinks...")
+    links = build_wikilink_graph(vault_path, config.ignore)
+    total_links = sum(len(v) for v in links.values()) // 2
+    typer.echo(f"  {total_links} unique links found")
+
+    n_notes = len(note_embeddings)
+    if n_notes > 500:
+        typer.echo(f"Computing pairwise similarity ({n_notes} notes, this may take a moment)...")
+    else:
+        typer.echo("Computing pairwise similarity...")
+    files, sim_matrix = cosine_similarity_matrix(note_embeddings)
+
+    suggestions = find_suggestions(
+        files, sim_matrix, links, threshold, limit,
+        exclude_same_folder=exclude_folders,
+    )
+
+    if not suggestions:
+        typer.echo(f"\nNo unlinked pairs above threshold {threshold:.2f}")
+        typer.echo("Try lowering --threshold")
+        return
+
+    typer.echo(f"\nSuggested links (similarity >= {threshold:.2f}, not currently linked):\n")
+
+    max_a = max(len(Path(a).stem) for a, _, _ in suggestions)
+    max_b = max(len(Path(b).stem) for _, b, _ in suggestions)
+
+    for i, (a, b, score) in enumerate(suggestions, 1):
+        name_a = Path(a).stem
+        name_b = Path(b).stem
+        typer.echo(f"  {i:3d}. {name_a:<{max_a}}  <->  {name_b:<{max_b}}  {score:.3f}")
 
 
 if __name__ == "__main__":

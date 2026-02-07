@@ -12,6 +12,31 @@ from typing import TYPE_CHECKING
 from obsidian_semantic.chunker import Chunk, chunk_note, parse_note, strip_inline_tags
 from obsidian_semantic.db import ChunkRecord, SemanticDB
 
+
+def should_ignore(rel_path: Path, ignore_patterns: list[str]) -> bool:
+    """Check if a path should be ignored based on glob patterns.
+
+    Checks each pattern against: individual path parts, the full path string,
+    and the filename.
+
+    Args:
+        rel_path: Path relative to vault root.
+        ignore_patterns: Glob patterns to match against.
+
+    Returns:
+        True if the path matches any ignore pattern.
+    """
+    path_str = str(rel_path)
+    for pattern in ignore_patterns:
+        for part in rel_path.parts:
+            if fnmatch.fnmatch(part, pattern):
+                return True
+        if fnmatch.fnmatch(path_str, pattern):
+            return True
+        if fnmatch.fnmatch(rel_path.name, pattern):
+            return True
+    return False
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -257,18 +282,7 @@ class VaultIndexer:
         Returns:
             True if the path matches any ignore pattern.
         """
-        path_str = str(rel_path)
-        for pattern in self._ignore_patterns:
-            # Check if any part of the path matches
-            for part in rel_path.parts:
-                if fnmatch.fnmatch(part, pattern):
-                    return True
-            # Also check the full path
-            if fnmatch.fnmatch(path_str, pattern):
-                return True
-            if fnmatch.fnmatch(rel_path.name, pattern):
-                return True
-        return False
+        return should_ignore(rel_path, self._ignore_patterns)
 
     def _detect_changes(self, files: list[Path]) -> dict[str, list]:
         """Detect new, modified, and deleted files.
