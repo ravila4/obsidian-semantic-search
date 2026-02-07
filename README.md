@@ -40,6 +40,24 @@ obsidian-semantic related "Daily/2026-02-05.md" --limit 5
 
 Works with both indexed and unindexed notes -- if the note isn't in the index yet, it gets chunked and embedded on the fly.
 
+### Suggest missing links
+
+Find semantically similar notes that aren't linked to each other -- surfaces missing wikilinks and potential duplicates.
+
+```bash
+obsidian-semantic suggest-links
+obsidian-semantic suggest-links --threshold 0.85 --limit 10
+obsidian-semantic suggest-links --exclude-same-folder "Daily Log"
+```
+
+Folders to exclude can also be set in config so you don't have to type them every time:
+
+```yaml
+suggest_links:
+  exclude_same_folder:
+    - "Daily Log"
+```
+
 ### Status
 
 ```bash
