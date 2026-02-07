@@ -33,12 +33,20 @@ class EmbedderConfig:
 
 
 @dataclass
+class SuggestLinksConfig:
+    """Configuration for the suggest-links command."""
+
+    exclude_same_folder: list[str] = field(default_factory=list)
+
+
+@dataclass
 class Config:
     """Application configuration."""
 
     embedder: EmbedderConfig = field(default_factory=EmbedderConfig)
     database: str = ".obsidian-semantic/index.lance"
     ignore: list[str] = field(default_factory=lambda: ["Templates/*"])
+    suggest_links: SuggestLinksConfig = field(default_factory=SuggestLinksConfig)
 
     def create_embedder(self) -> Embedder:
         """Create an embedder instance from this configuration."""
@@ -149,6 +157,12 @@ def _merge_yaml_into_config(config: Config, yaml_path: Path) -> Config:
         config.database = data["database"]
     if "ignore" in data:
         config.ignore = data["ignore"]
+
+    # Merge suggest-links settings
+    if "suggest_links" in data:
+        sl = data["suggest_links"]
+        if "exclude_same_folder" in sl:
+            config.suggest_links.exclude_same_folder = sl["exclude_same_folder"]
 
     return config
 

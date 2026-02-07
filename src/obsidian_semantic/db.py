@@ -327,6 +327,28 @@ class SemanticDB:
 
         return metadata
 
+    def get_all_vectors(self) -> dict[str, list[list[float]]]:
+        """Get all embedding vectors grouped by file path.
+
+        Returns:
+            Dict mapping file_path -> list of chunk vectors.
+        """
+        table = self._table()
+
+        try:
+            results = table.search().select(["file_path", "vector"]).limit(100_000).to_list()
+        except Exception:
+            return {}
+
+        if not results:
+            return {}
+
+        vectors_by_file: dict[str, list[list[float]]] = {}
+        for r in results:
+            vectors_by_file.setdefault(r["file_path"], []).append(r["vector"])
+
+        return vectors_by_file
+
     def get_stats(self) -> IndexStats:
         """Get index statistics.
 

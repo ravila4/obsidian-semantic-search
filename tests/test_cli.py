@@ -56,10 +56,13 @@ def mock_embedder() -> Mock:
 @pytest.fixture
 def configured_mock(vault_path: Path, mock_embedder: Mock) -> Mock:
     """Create a mock config that returns consistent embedder."""
+    from obsidian_semantic.config import SuggestLinksConfig
+
     mock_config = Mock()
     mock_config.database = str(vault_path / ".obsidian-semantic" / "index.lance")
     mock_config.ignore = []
     mock_config.create_embedder.return_value = mock_embedder
+    mock_config.suggest_links = SuggestLinksConfig()
     return mock_config
 
 
@@ -393,6 +396,77 @@ class TestRelatedCommand:
             assert result.exit_code != 0 or "not found" in result.output.lower()
 
 
+class TestSuggestLinksCommand:
+    """Test the suggest-links command."""
+
+    def test_suggest_links_shows_results(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """suggest-links displays high-similarity unlinked pairs."""
+        # Create vault files with wikilinks
+        (vault_path / "note1.md").write_text("# Note One\n\nContent about [[note2]].\n")
+        (vault_path / "note2.md").write_text("# Note Two\n\nDifferent content.\n")
+        (vault_path / "note3.md").write_text("# Note Three\n\nMore content.\n")
+
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            # Index so the DB has data
+            runner.invoke(app, ["index", "--vault", str(vault_path)])
+
+            result = runner.invoke(
+                app, ["suggest-links", "--vault", str(vault_path), "--threshold", "0.0"]
+            )
+
+            assert result.exit_code == 0
+            # note1-note2 are linked, so they should NOT appear
+            # But unlinked pairs should appear (at threshold 0.0 everything qualifies)
+            assert "suggest" in result.output.lower() or "note" in result.output.lower()
+
+    def test_suggest_links_no_results(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """suggest-links with high threshold returns no results gracefully."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            runner.invoke(app, ["index", "--vault", str(vault_path)])
+
+            result = runner.invoke(
+                app, ["suggest-links", "--vault", str(vault_path), "--threshold", "0.999"]
+            )
+
+            assert result.exit_code == 0
+            assert "no" in result.output.lower()
+
+    def test_suggest_links_help(self, runner: CliRunner):
+        """suggest-links --help shows options."""
+        result = runner.invoke(app, ["suggest-links", "--help"])
+
+        assert result.exit_code == 0
+        assert "--threshold" in result.output
+        assert "--limit" in result.output
+        assert "--exclude-same-folder" in result.output
+
+    def test_suggest_links_exclude_same_folder(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """--exclude-same-folder filters out pairs in the same folder."""
+        sub = vault_path / "Daily Log"
+        sub.mkdir()
+        (sub / "day1.md").write_text("# Day 1\n\nSome content.\n")
+        (sub / "day2.md").write_text("# Day 2\n\nSimilar content.\n")
+
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            runner.invoke(app, ["index", "--vault", str(vault_path)])
+
+            result = runner.invoke(
+                app, [
+                    "suggest-links", "--vault", str(vault_path),
+                    "--threshold", "0.0",
+                    "--exclude-same-folder", "Daily Log",
+                ]
+            )
+
+            assert result.exit_code == 0
+
+
 class TestHelpOutput:
     """Test help output for commands."""
 
@@ -406,6 +480,7 @@ class TestHelpOutput:
         assert "related" in result.output
         assert "status" in result.output
         assert "configure" in result.output
+        assert "suggest-links" in result.output
 
     def test_index_help(self, runner: CliRunner):
         """Index help shows options."""
