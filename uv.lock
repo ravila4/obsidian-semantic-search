@@ -869,6 +869,7 @@ dependencies = [
     { name = "mcp" },
     { name = "numpy" },
     { name = "pyyaml" },
+    { name = "rich" },
     { name = "structlog" },
     { name = "typer" },
 ]
@@ -893,6 +894,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "rich", specifier = ">=13.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1" },
     { name = "structlog", specifier = ">=24.0" },
     { name = "typer", specifier = ">=0.9" },

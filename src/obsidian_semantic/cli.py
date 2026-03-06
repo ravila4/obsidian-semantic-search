@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+from dataclasses import asdict
 from pathlib import Path
 
 import typer
@@ -29,6 +31,49 @@ app = typer.Typer(
 )
 
 CONFIG_DIR = Path.home() / ".config" / "obsidian-semantic"
+
+
+def _score_color(score: float) -> str:
+    if score >= 0.7:
+        return "green"
+    if score >= 0.5:
+        return "yellow"
+    return "red"
+
+
+def _print_results_rich(results: list[SearchResult], show_title: bool = False) -> None:
+    from rich.console import Console
+    from rich.text import Text
+
+    console = Console()
+    for i, result in enumerate(results, 1):
+        color = _score_color(result.score)
+        label = f"Result {i}" if not show_title else f"{i}. {result.title}"
+        header = Text()
+        header.append(f" {label} ", style="bold white")
+        header.append(f"score: ", style="dim")
+        header.append(f"{result.score:.3f} ", style=f"bold {color}")
+        console.rule(header, style="dim")
+
+        meta = Text()
+        meta.append(f"  {result.file_path}", style="dim")
+        if not show_title:
+            meta.append(f":{result.start_line}", style="dim")
+        if result.headers:
+            meta.append(f"  §  {' > '.join(result.headers)}", style="dim")
+        console.print(meta)
+        console.print()
+
+        body = result.text[:500]
+        if len(result.text) > 500:
+            body += "..."
+        console.print(f"  {body}")
+        console.print()
+
+
+def _print_results_json(results: list[SearchResult]) -> None:
+    data = [asdict(r) for r in results]
+    typer.echo(json.dumps(data, indent=2))
 
 
 def _get_vault_path(vault: Path | None) -> Path:
@@ -167,6 +212,7 @@ def search(
     vault: Path | None = typer.Option(
         None, "--vault", "-v", help="Path to Obsidian vault."
     ),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
 ) -> None:
     """Search indexed content semantically."""
     vault_path = _get_vault_path(vault)
@@ -188,15 +234,16 @@ def search(
     )
 
     if not results:
-        typer.echo("No results found.")
+        if json_output:
+            typer.echo("[]")
+        else:
+            typer.echo("No results found.")
         return
 
-    for i, result in enumerate(results, 1):
-        typer.echo(f"\n--- Result {i} (score: {result.score:.3f}) ---")
-        typer.echo(f"File: {result.file_path}:{result.start_line}")
-        if result.headers:
-            typer.echo(f"Section: {' > '.join(result.headers)}")
-        typer.echo(f"\n{result.text[:500]}{'...' if len(result.text) > 500 else ''}")
+    if json_output:
+        _print_results_json(results)
+    else:
+        _print_results_rich(results)
 
 
 @app.command()
@@ -206,6 +253,7 @@ def related(
     vault: Path | None = typer.Option(
         None, "--vault", "-v", help="Path to Obsidian vault."
     ),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
 ) -> None:
     """Find notes related to a given note."""
     vault_path = _get_vault_path(vault)
@@ -250,18 +298,19 @@ def related(
                 all_results[r.file_path] = r
 
     if not all_results:
-        typer.echo("No related notes found.")
+        if json_output:
+            typer.echo("[]")
+        else:
+            typer.echo("No related notes found.")
         return
 
     # Sort by score descending, take top limit
     sorted_results = sorted(all_results.values(), key=lambda r: r.score, reverse=True)[:limit]
 
-    for i, result in enumerate(sorted_results, 1):
-        typer.echo(f"\n--- {i}. {result.title} (score: {result.score:.3f}) ---")
-        typer.echo(f"File: {result.file_path}")
-        if result.headers:
-            typer.echo(f"Section: {' > '.join(result.headers)}")
-        typer.echo(f"\n{result.text[:300]}{'...' if len(result.text) > 300 else ''}")
+    if json_output:
+        _print_results_json(sorted_results)
+    else:
+        _print_results_rich(sorted_results, show_title=True)
 
 
 @app.command()
