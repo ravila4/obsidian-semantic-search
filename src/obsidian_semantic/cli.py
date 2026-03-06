@@ -8,20 +8,15 @@ import json
 import os
 from dataclasses import asdict
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 import yaml
 
-from obsidian_semantic.chunker import chunk_note, parse_note
 from obsidian_semantic.config import load_config
-from obsidian_semantic.db import SearchResult, SemanticDB
-from obsidian_semantic.indexer import VaultIndexer, make_embedding_text
-from obsidian_semantic.links import (
-    build_wikilink_graph,
-    cosine_similarity_matrix,
-    find_suggestions,
-    get_note_embeddings,
-)
+
+if TYPE_CHECKING:
+    from obsidian_semantic.db import SearchResult
 
 app = typer.Typer(
     name="obsidian-semantic",
@@ -110,6 +105,9 @@ def status(
     ),
 ) -> None:
     """Show index status and statistics."""
+    from obsidian_semantic.db import SemanticDB
+    from obsidian_semantic.indexer import VaultIndexer
+
     vault_path = _get_vault_path(vault)
     config = load_config(vault_path)
     db_path = _get_db_path(config.database, vault_path)
@@ -127,7 +125,6 @@ def status(
     if stats.last_indexed:
         typer.echo(f"Last indexed: {stats.last_indexed.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # Show pending changes
     indexer = VaultIndexer(
         vault_path=vault_path,
         db_path=db_path,
@@ -168,6 +165,9 @@ def index(
     ),
 ) -> None:
     """Index the Obsidian vault."""
+    from obsidian_semantic.db import SemanticDB
+    from obsidian_semantic.indexer import VaultIndexer
+
     vault_path = _get_vault_path(vault)
     config = load_config(vault_path)
     db_path = _get_db_path(config.database, vault_path)
@@ -215,6 +215,8 @@ def search(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
 ) -> None:
     """Search indexed content semantically."""
+    from obsidian_semantic.db import SemanticDB
+
     vault_path = _get_vault_path(vault)
     config = load_config(vault_path)
     db_path = _get_db_path(config.database, vault_path)
@@ -256,6 +258,10 @@ def related(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
 ) -> None:
     """Find notes related to a given note."""
+    from obsidian_semantic.chunker import chunk_note, parse_note
+    from obsidian_semantic.db import SemanticDB
+    from obsidian_semantic.indexer import make_embedding_text
+
     vault_path = _get_vault_path(vault)
     config = load_config(vault_path)
     db_path = _get_db_path(config.database, vault_path)
@@ -399,6 +405,14 @@ def suggest_links(
     ),
 ) -> None:
     """Suggest missing wikilinks between semantically similar notes."""
+    from obsidian_semantic.db import SemanticDB
+    from obsidian_semantic.links import (
+        build_wikilink_graph,
+        cosine_similarity_matrix,
+        find_suggestions,
+        get_note_embeddings,
+    )
+
     vault_path = _get_vault_path(vault)
     config = load_config(vault_path)
     db_path = _get_db_path(config.database, vault_path)
