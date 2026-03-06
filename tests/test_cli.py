@@ -1,5 +1,6 @@
 """Tests for the CLI commands."""
 
+import json
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -218,6 +219,38 @@ class TestSearchCommand:
             assert result.exit_code == 0
             assert "no results" in result.output.lower() or "0" in result.output
 
+    def test_search_json_no_results(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """--json with empty index returns [] not plain text."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(app, ["search", "query", "--json", "--vault", str(vault_path)])
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data == []
+
+    def test_search_json_output(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """--json flag produces valid JSON with expected fields."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            runner.invoke(app, ["index", "--vault", str(vault_path)])
+
+            result = runner.invoke(
+                app, ["search", "note content", "--json", "--vault", str(vault_path)]
+            )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert isinstance(data, list)
+            assert len(data) > 0
+            first = data[0]
+            assert "file_path" in first
+            assert "score" in first
+            assert "text" in first
+            assert "headers" in first
+
 
 class TestConfigureCommand:
     """Test the configure command."""
@@ -394,6 +427,40 @@ class TestRelatedCommand:
             )
 
             assert result.exit_code != 0 or "not found" in result.output.lower()
+
+    def test_related_json_no_results(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """--json with empty index returns [] not plain text."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app, ["related", "note1.md", "--json", "--vault", str(vault_path)]
+            )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data == []
+
+    def test_related_json_output(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """--json flag on related produces valid JSON with expected fields."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            runner.invoke(app, ["index", "--vault", str(vault_path)])
+
+            result = runner.invoke(
+                app, ["related", "note1.md", "--json", "--vault", str(vault_path)]
+            )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert isinstance(data, list)
+            assert len(data) > 0
+            first = data[0]
+            assert "file_path" in first
+            assert "score" in first
+            assert "title" in first
+            assert "text" in first
 
 
 class TestSuggestLinksCommand:
