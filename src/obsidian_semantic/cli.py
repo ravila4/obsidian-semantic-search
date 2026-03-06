@@ -25,6 +25,7 @@ app = typer.Typer(
     name="obsidian-semantic",
     help="Semantic search for Obsidian vaults.",
     no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
 
 CONFIG_DIR = Path.home() / ".config" / "obsidian-semantic"
@@ -73,8 +74,10 @@ def status(
     db = SemanticDB(db_path, dimension=embedder.dimension)
     stats = db.get_stats()
 
+    db_size = sum(f.stat().st_size for f in db_path.rglob("*") if f.is_file())
+    db_size_mb = db_size / (1024 * 1024)
     typer.echo(f"Vault: {vault_path}")
-    typer.echo(f"Database: {db_path}")
+    typer.echo(f"Database: {db_path} ({db_size_mb:.1f} MB)")
     typer.echo(f"Indexed: {stats.file_count} files, {stats.chunk_count} chunks")
     if stats.last_indexed:
         typer.echo(f"Last indexed: {stats.last_indexed.strftime('%Y-%m-%d %H:%M:%S')}")
