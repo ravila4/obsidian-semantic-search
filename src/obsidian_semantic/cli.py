@@ -67,7 +67,7 @@ def _print_results_rich(results: list[SearchResult], show_title: bool = False) -
         body = result.text[:500]
         if len(result.text) > 500:
             body += "..."
-        console.print(f"  {body}")
+        console.print(body)
         console.print()
 
 
