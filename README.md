@@ -2,6 +2,10 @@
 
 Semantic search for Obsidian vaults. Index your vault into vector embeddings, then search by meaning rather than keywords.
 
+<p align="center">
+  <img src="docs/screenshot.svg" alt="obsidian-semantic CLI" width="600">
+</p>
+
 ## Setup
 
 ```bash
@@ -133,3 +137,55 @@ embedder:
 ```
 
 If you see timeout errors during indexing, try increasing this value. Very large notes with extensive JSON or code blocks may need 60-120 seconds.
+
+## Automatic Indexing
+
+### Linux (systemd)
+
+Create a service and timer in `~/.config/systemd/user/`:
+
+**`obsidian-semantic-index.service`**
+```ini
+[Unit]
+Description=Index Obsidian vault for semantic search
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/obsidian-semantic/env
+ExecStart=/home/youruser/.local/bin/obsidian-semantic index
+```
+
+**`obsidian-semantic-index.timer`**
+```ini
+[Unit]
+Description=Run Obsidian semantic index hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+The `EnvironmentFile` is optional — use it to store secrets like `GEMINI_API_KEY` outside of the main config.
+
+Enable and start:
+
+```bash
+systemctl --user enable --now obsidian-semantic-index.timer
+```
+
+#### Multiple vaults
+
+To index additional vaults, add more `ExecStart` lines to the service (they run sequentially):
+
+```ini
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/obsidian-semantic/env
+ExecStart=/home/youruser/.local/bin/obsidian-semantic index
+ExecStart=/home/youruser/.local/bin/obsidian-semantic index --vault /path/to/second-vault
+```
+
+> **macOS:** Use a launchd plist instead of systemd. The CLI flags are the same; only the scheduling mechanism differs.
