@@ -207,6 +207,27 @@ embedder:
         assert isinstance(embedder, OllamaEmbedder)
         assert embedder.model_name == "mxbai-embed-large"
 
+    def test_create_lmstudio_from_config(self, tmp_path: Path):
+        """Should create LMStudioEmbedder from config, including endpoint and prefixes."""
+        config_file = tmp_path / ".obsidian-semantic.yaml"
+        config_file.write_text("""
+embedder:
+  type: lmstudio
+  model: text-embedding-qwen3-embedding-8b
+  dimension: 4096
+  endpoint: http://localhost:1234
+  query_prefix: "Instruct: Retrieve relevant notes\\nQuery: "
+""")
+        config = load_config(vault_path=tmp_path)
+        embedder = config.create_embedder()
+
+        from obsidian_semantic.embedder.lmstudio import LMStudioEmbedder
+        assert isinstance(embedder, LMStudioEmbedder)
+        assert embedder.model_name == "text-embedding-qwen3-embedding-8b"
+        assert embedder.dimension == 4096
+        assert embedder._endpoint == "http://localhost:1234"
+        assert embedder._query_prefix == "Instruct: Retrieve relevant notes\nQuery: "
+
     def test_create_gemini_from_config(self, tmp_path: Path):
         """Should create GeminiEmbedder from config."""
         config_file = tmp_path / ".obsidian-semantic.yaml"

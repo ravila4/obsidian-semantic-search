@@ -464,6 +464,203 @@ class TestGeminiEmbedder:
         assert request_body["taskType"] == "RETRIEVAL_DOCUMENT"
 
 
+class TestLMStudioEmbedder:
+    """Test the LM Studio embedder implementation."""
+
+    def test_default_configuration(self):
+        """Should have sensible defaults targeting LM Studio's local API."""
+        from obsidian_semantic.embedder.lmstudio import LMStudioEmbedder
+
+        embedder = LMStudioEmbedder()
+
+        assert embedder.model_name == "text-embedding-nomic-embed-text-v1.5"
+        assert embedder.dimension == 768
+        assert embedder._endpoint == "http://localhost:1234"
+        assert embedder._batch_size == 32
+
+    def test_custom_configuration(self):
+        """Should accept custom config (e.g., qwen3 8B at 4096 dims)."""
+        from obsidian_semantic.embedder.lmstudio import LMStudioEmbedder
+
+        embedder = LMStudioEmbedder(
+            model="text-embedding-qwen3-embedding-8b",
+            endpoint="http://192.168.1.100:1234",
+            batch_size=16,
+            dimension=4096,
+        )
+
+        assert embedder.model_name == "text-embedding-qwen3-embedding-8b"
+        assert embedder.dimension == 4096
+        assert embedder._endpoint == "http://192.168.1.100:1234"
+        assert embedder._batch_size == 16
+
+    @patch("obsidian_semantic.embedder.lmstudio.httpx.Client")
+    def test_embed_uses_v1_embeddings_endpoint(self, mock_client_cls: Mock):
+        """Should POST to /v1/embeddings (OpenAI-compatible)."""
+        from obsidian_semantic.embedder.lmstudio import LMStudioEmbedder
+
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "object": "list",
+            "data": [{"object": "embedding", "embedding": [0.1] * 768, "index": 0}],
+            "model": "text-embedding-nomic-embed-text-v1.5",
+        }
+        mock_response.raise_for_status = Mock()
+        mock_client = MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        embedder = LMStudioEmbedder()
+        result = embedder.embed(["hello"])
+
+        assert len(result) == 1
+        assert len(result[0]) == 768
+        call_args = mock_client.post.call_args
+        assert "/v1/embeddings" in call_args[0][0]
+        assert call_args[1]["json"]["input"] == ["hello"]
+        assert call_args[1]["json"]["model"] == "text-embedding-nomic-embed-text-v1.5"
+
+    @patch("obsidian_semantic.embedder.lmstudio.httpx.Client")
+    def test_embed_respects_batch_size(self, mock_client_cls: Mock):
+        """Should split texts into batches based on batch_size."""
+        from obsidian_semantic.embedder.lmstudio import LMStudioEmbedder
+
+        def mock_batch_response(*args, **kwargs):
+            batch = kwargs["json"]["input"]
+            mock_resp = Mock()
+            mock_resp.json.return_value = {
+                "data": [
+                    {"embedding": [0.1] * 768, "index": i}
+                    for i, _ in enumerate(batch)
+                ]
+            }
+            mock_resp.raise_for_status = Mock()
+            return mock_resp
+
+        mock_client = MagicMock()
+        mock_client.post.side_effect = mock_batch_response
+        mock_client_cls.return_value = mock_client
+
+        embedder = LMStudioEmbedder(batch_size=2)
+        result = embedder.embed(["a", "b", "c", "d", "e"])
+
+        assert len(result) == 5
+        assert mock_client.post.call_count == 3  # 2+2+1
+
+    @patch("obsidian_semantic.embedder.lmstudio.httpx.Client")
+    def test_embed_sorts_by_index(self, mock_client_cls: Mock):
+        """Should re-order returned embeddings by 'index' to match request order."""
+        from obsidian_semantic.embedder.lmstudio import LMStudioEmbedder
+
+        # Server returns shuffled order; we expect them sorted by index back
+        # into request order.
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "data": [
+                {"embedding": [1.0], "index": 1},
+                {"embedding": [0.0], "index": 0},
+                {"embedding": [2.0], "index": 2},
+            ]
+        }
+        mock_response.raise_for_status = Mock()
+        mock_client = MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        embedder = LMStudioEmbedder()
+        result = embedder.embed(["a", "b", "c"])
+
+        assert result == [[0.0], [1.0], [2.0]]
+
+    @patch("obsidian_semantic.embedder.lmstudio.httpx.Client")
+    def test_embed_empty_list(self, mock_client_cls: Mock):
+        """Empty input should not call the API."""
+        from obsidian_semantic.embedder.lmstudio import LMStudioEmbedder
+
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+
+        embedder = LMStudioEmbedder()
+        result = embedder.embed([])
+
+        assert result == []
+        mock_client.post.assert_not_called()
+
+    @patch("obsidian_semantic.embedder.lmstudio.httpx.Client")
+    def test_connection_error_mentions_lms_server(self, mock_client_cls: Mock):
+        """Connection error should hint to start the LM Studio server."""
+        import httpx
+
+        mock_client = MagicMock()
+        mock_client.post.side_effect = httpx.ConnectError("refused")
+        mock_client_cls.return_value = mock_client
+
+        from obsidian_semantic.embedder.lmstudio import LMStudioEmbedder
+
+        embedder = LMStudioEmbedder()
+        with pytest.raises(ConnectionError) as exc_info:
+            embedder.embed(["hi"])
+        assert "LM Studio" in str(exc_info.value)
+        assert "lms server start" in str(exc_info.value)
+
+    @patch("obsidian_semantic.embedder.lmstudio.httpx.Client")
+    def test_timeout_error_raised(self, mock_client_cls: Mock):
+        """Timeouts should raise TimeoutError."""
+        import httpx
+
+        mock_client = MagicMock()
+        mock_client.post.side_effect = httpx.TimeoutException("slow")
+        mock_client_cls.return_value = mock_client
+
+        from obsidian_semantic.embedder.lmstudio import LMStudioEmbedder
+
+        embedder = LMStudioEmbedder()
+        with pytest.raises(TimeoutError):
+            embedder.embed(["hi"])
+
+    @patch("obsidian_semantic.embedder.lmstudio.httpx.Client")
+    def test_query_prefix_applied(self, mock_client_cls: Mock):
+        """embed_query() should prepend query_prefix (instruction-aware models)."""
+        from obsidian_semantic.embedder.lmstudio import LMStudioEmbedder
+
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "data": [{"embedding": [0.1] * 768, "index": 0}]
+        }
+        mock_response.raise_for_status = Mock()
+        mock_client = MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        embedder = LMStudioEmbedder(
+            query_prefix="Instruct: Retrieve relevant notes\nQuery: "
+        )
+        embedder.embed_query(["python testing"])
+
+        sent = mock_client.post.call_args[1]["json"]["input"]
+        assert sent == ["Instruct: Retrieve relevant notes\nQuery: python testing"]
+
+    @patch("obsidian_semantic.embedder.lmstudio.httpx.Client")
+    def test_document_prefix_applied(self, mock_client_cls: Mock):
+        """embed_document() should prepend document_prefix."""
+        from obsidian_semantic.embedder.lmstudio import LMStudioEmbedder
+
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "data": [{"embedding": [0.1] * 768, "index": 0}]
+        }
+        mock_response.raise_for_status = Mock()
+        mock_client = MagicMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        embedder = LMStudioEmbedder(document_prefix="search_document: ")
+        embedder.embed_document(["note body"])
+
+        sent = mock_client.post.call_args[1]["json"]["input"]
+        assert sent == ["search_document: note body"]
+
+
 class TestEmbedderFactory:
     """Test the embedder factory and configuration."""
 
@@ -474,6 +671,15 @@ class TestEmbedderFactory:
         embedder = create_embedder("ollama")
 
         assert isinstance(embedder, OllamaEmbedder)
+
+    def test_create_lmstudio_embedder(self):
+        """Should create LMStudio embedder."""
+        from obsidian_semantic.embedder import create_embedder
+        from obsidian_semantic.embedder.lmstudio import LMStudioEmbedder
+
+        embedder = create_embedder("lmstudio")
+
+        assert isinstance(embedder, LMStudioEmbedder)
 
     def test_create_gemini_embedder(self):
         """Should create Gemini embedder with API key."""
@@ -493,6 +699,16 @@ class TestEmbedderFactory:
             embedder = create_embedder()
 
         assert isinstance(embedder, OllamaEmbedder)
+
+    def test_create_lmstudio_from_env_var(self):
+        """OBSIDIAN_EMBEDDER=lmstudio should work too."""
+        from obsidian_semantic.embedder import create_embedder
+        from obsidian_semantic.embedder.lmstudio import LMStudioEmbedder
+
+        with patch.dict(os.environ, {"OBSIDIAN_EMBEDDER": "lmstudio"}):
+            embedder = create_embedder()
+
+        assert isinstance(embedder, LMStudioEmbedder)
 
     def test_default_to_ollama(self):
         """Should default to Ollama if no env var set."""
