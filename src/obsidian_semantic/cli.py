@@ -322,7 +322,9 @@ def related(
 @app.command()
 def configure(
     show: bool = typer.Option(False, "--show", "-s", help="Show current configuration."),
-    embedder: str | None = typer.Option(None, "--embedder", "-e", help="Embedder (ollama/gemini)."),
+    embedder: str | None = typer.Option(
+        None, "--embedder", "-e", help="Embedder (ollama/lmstudio/gemini)."
+    ),
     model: str | None = typer.Option(None, "--model", "-m", help="Model name."),
     vault: Path | None = typer.Option(None, "--vault", "-v", help="Default vault path."),
 ) -> None:
@@ -348,8 +350,10 @@ def configure(
         config_data["vault"] = str(vault.expanduser().resolve())
 
     if embedder:
-        if embedder not in ("ollama", "gemini"):
-            raise typer.BadParameter(f"Unknown embedder: {embedder}. Use 'ollama' or 'gemini'.")
+        if embedder not in ("ollama", "lmstudio", "gemini"):
+            raise typer.BadParameter(
+                f"Unknown embedder: {embedder}. Use 'ollama', 'lmstudio', or 'gemini'."
+            )
         config_data.setdefault("embedder", {})["type"] = embedder
 
     if model:
@@ -366,9 +370,9 @@ def configure(
 
         # Embedder type
         current_embedder = config_data.get("embedder", {}).get("type", "ollama")
-        typer.echo("\nEmbedder options: ollama, gemini")
+        typer.echo("\nEmbedder options: ollama, lmstudio, gemini")
         embedder_input = typer.prompt("Embedder type", default=current_embedder)
-        if embedder_input not in ("ollama", "gemini"):
+        if embedder_input not in ("ollama", "lmstudio", "gemini"):
             raise typer.BadParameter(f"Unknown embedder: {embedder_input}")
         config_data.setdefault("embedder", {})["type"] = embedder_input
 
@@ -379,6 +383,18 @@ def configure(
             current_endpoint = config_data.get("embedder", {}).get("endpoint", "http://localhost:11434")
             endpoint = typer.prompt("Ollama endpoint", default=current_endpoint)
             config_data["embedder"]["endpoint"] = endpoint
+        elif embedder_input == "lmstudio":
+            current_model = config_data.get("embedder", {}).get(
+                "model", "text-embedding-nomic-embed-text-v1.5"
+            )
+            model_input = typer.prompt("Model name", default=current_model)
+            config_data["embedder"]["model"] = model_input
+            current_endpoint = config_data.get("embedder", {}).get(
+                "endpoint", "http://localhost:1234"
+            )
+            endpoint = typer.prompt("LM Studio endpoint", default=current_endpoint)
+            config_data["embedder"]["endpoint"] = endpoint
+            typer.echo("Note: Start the server with `lms server start` if it's not running.")
         elif embedder_input == "gemini":
             current_model = config_data.get("embedder", {}).get("model", "text-embedding-004")
             model_input = typer.prompt("Model name", default=current_model)

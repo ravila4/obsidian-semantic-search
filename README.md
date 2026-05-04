@@ -13,7 +13,7 @@ uv sync
 uv run obsidian-semantic configure
 ```
 
-Configuration is stored in `~/.config/obsidian-semantic/config.yaml`. Supports Ollama (local) and Gemini embedders.
+Configuration is stored in `~/.config/obsidian-semantic/config.yaml`. Supports Ollama (local), LM Studio (local), and Gemini embedders.
 
 ## Usage
 
@@ -111,6 +111,43 @@ embedder:
 
 ```bash
 ollama pull qwen3-embedding:8b
+```
+
+### LM Studio
+
+Local embeddings via [LM Studio](https://lmstudio.ai)'s OpenAI-compatible API (`/v1/embeddings` on port 1234). Start the server first:
+
+```bash
+lms server start
+```
+
+#### LM Studio with Nomic
+
+```yaml
+vault: ~/Documents/Obsidian-Notes
+embedder:
+  type: lmstudio
+  model: text-embedding-nomic-embed-text-v1.5
+  dimension: 768
+  query_prefix: "search_query: "
+  document_prefix: "search_document: "
+```
+
+```bash
+lms get -y nomic-ai/nomic-embed-text-v1.5
+```
+
+#### LM Studio with Qwen3-embedding
+
+Higher-quality embeddings (4096 dimensions). Like the Ollama variant, uses an instruction prefix for queries to improve retrieval.
+
+```yaml
+vault: ~/Documents/Obsidian-Notes
+embedder:
+  type: lmstudio
+  model: text-embedding-qwen3-embedding-8b
+  dimension: 4096
+  query_prefix: "Instruct: Given a search query, retrieve relevant notes\nQuery: "
 ```
 
 ### Gemini

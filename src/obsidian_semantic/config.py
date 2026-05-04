@@ -72,6 +72,17 @@ class Config:
                 kwargs["document_prefix"] = self.embedder.document_prefix
             return OllamaEmbedder(**kwargs)
 
+        elif self.embedder.type == "lmstudio":
+            from obsidian_semantic.embedder.lmstudio import LMStudioEmbedder
+
+            if self.embedder.endpoint:
+                kwargs["endpoint"] = self.embedder.endpoint
+            if self.embedder.query_prefix is not None:
+                kwargs["query_prefix"] = self.embedder.query_prefix
+            if self.embedder.document_prefix is not None:
+                kwargs["document_prefix"] = self.embedder.document_prefix
+            return LMStudioEmbedder(**kwargs)
+
         elif self.embedder.type == "gemini":
             from obsidian_semantic.embedder.gemini import GeminiEmbedder
 

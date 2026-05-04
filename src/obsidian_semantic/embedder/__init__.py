@@ -15,7 +15,7 @@ def create_embedder(
     """Create an embedder instance based on type.
 
     Args:
-        embedder_type: Type of embedder ("ollama" or "gemini").
+        embedder_type: Type of embedder ("ollama", "lmstudio", or "gemini").
             If not provided, reads from OBSIDIAN_EMBEDDER env var,
             defaulting to "ollama".
         **kwargs: Additional arguments passed to the embedder constructor.
@@ -33,6 +33,10 @@ def create_embedder(
 
     if embedder_type == "ollama":
         return OllamaEmbedder(**kwargs)
+    elif embedder_type == "lmstudio":
+        from obsidian_semantic.embedder.lmstudio import LMStudioEmbedder
+
+        return LMStudioEmbedder(**kwargs)
     elif embedder_type == "gemini":
         from obsidian_semantic.embedder.gemini import GeminiEmbedder
 
@@ -40,5 +44,5 @@ def create_embedder(
     else:
         raise ValueError(
             f"Unknown embedder type: {embedder_type}. "
-            "Supported types: ollama, gemini"
+            "Supported types: ollama, lmstudio, gemini"
         )
