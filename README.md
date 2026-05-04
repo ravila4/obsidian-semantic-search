@@ -225,4 +225,26 @@ ExecStart=/home/youruser/.local/bin/obsidian-semantic index
 ExecStart=/home/youruser/.local/bin/obsidian-semantic index --vault /path/to/second-vault
 ```
 
-> **macOS:** Use a launchd plist instead of systemd. The CLI flags are the same; only the scheduling mechanism differs.
+### macOS (launchd)
+
+A ready-to-edit plist + wrapper script lives in [`scripts/launchd/`](scripts/launchd/). The wrapper opportunistically starts the LM Studio server (`lms server start`) before each run, so the agent works whether or not you remembered to leave the server up.
+
+Install once:
+
+```bash
+# Make obsidian-semantic available on PATH
+uv tool install -e .
+
+# Edit the absolute paths in the plist to match your home directory, then:
+cp scripts/launchd/com.ravila.obsidian-semantic-index.plist ~/Library/LaunchAgents/
+launchctl load -w ~/Library/LaunchAgents/com.ravila.obsidian-semantic-index.plist
+```
+
+Logs land at `~/Library/Logs/obsidian-semantic-index.log`.
+
+To unload or check status:
+
+```bash
+launchctl list | grep obsidian-semantic
+launchctl unload ~/Library/LaunchAgents/com.ravila.obsidian-semantic-index.plist
+```

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Hourly Obsidian semantic index on macOS.
+
+    Install:
+        cp scripts/launchd/com.ravila.obsidian-semantic-index.plist ~/Library/LaunchAgents/
+        # Edit the absolute paths below to match your home directory.
+        launchctl load -w ~/Library/LaunchAgents/com.ravila.obsidian-semantic-index.plist
+
+    Logs land at ~/Library/Logs/obsidian-semantic-index.log
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ravila.obsidian-semantic-index</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/ravila/Projects/obsidian-semantic-search/scripts/launchd/obsidian-semantic-index.sh</string>
+    </array>
+
+    <!-- Run hourly. StartInterval counts elapsed wall-clock seconds; the job
+         skips if the previous invocation is still running. -->
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <!-- Don't fire immediately on login — wait for the first interval. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ravila/Library/Logs/obsidian-semantic-index.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/ravila/Library/Logs/obsidian-semantic-index.log</string>
+</dict>
+</plist>
