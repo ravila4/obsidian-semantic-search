@@ -663,6 +663,47 @@ def show(
     typer.echo(section_text.rstrip("\n"))
 
 
+@app.command("list-tags")
+def list_tags(
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
+    vault: Path | None = typer.Option(
+        None, "--vault", "-v", help="Path to Obsidian vault."
+    ),
+) -> None:
+    """List distinct tags in the index with file counts.
+
+    Counts are per-file: a frontmatter tag that propagates to every chunk
+    of a note still counts that note once.
+    """
+    from obsidian_semantic.db import SemanticDB
+
+    vault_path = _get_vault_path(vault)
+    config = load_config(vault_path)
+    db_path = _get_db_path(config.database, vault_path)
+
+    embedder = config.create_embedder()
+    db = SemanticDB(db_path, dimension=embedder.dimension)
+
+    tags = db.list_tags()
+
+    if json_output:
+        # Sort keys for stable output across runs.
+        ordered = dict(sorted(tags.items()))
+        typer.echo(json.dumps(ordered))
+        return
+
+    if not tags:
+        typer.echo("No tags found in the index.")
+        return
+
+    # Sort by count descending, alphabetic on ties.
+    sorted_tags = sorted(tags.items(), key=lambda kv: (-kv[1], kv[0]))
+    max_tag = max(len(t) for t, _ in sorted_tags)
+
+    for tag, count in sorted_tags:
+        typer.echo(f"  {tag:<{max_tag}}  {count}")
+
+
 @app.command("suggest-links")
 def suggest_links(
     limit: int = typer.Option(20, "--limit", "-n", help="Maximum suggestions."),

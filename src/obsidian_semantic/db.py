@@ -356,6 +356,31 @@ class SemanticDB:
 
         return vectors_by_file
 
+    def list_tags(self) -> dict[str, int]:
+        """List distinct tags in the index with file counts.
+
+        A tag is counted once per file, even if multiple chunks of that
+        file carry it (frontmatter tags propagate to every chunk).
+
+        Returns:
+            Dict mapping tag -> number of files carrying it.
+        """
+        table = self._table()
+
+        try:
+            results = table.search().select(["file_path", "tags"]).limit(100_000).to_list()
+        except Exception:
+            return {}
+
+        files_per_tag: dict[str, set[str]] = {}
+        for r in results:
+            for tag in r.get("tags") or []:
+                if not tag:
+                    continue
+                files_per_tag.setdefault(tag, set()).add(r["file_path"])
+
+        return {tag: len(files) for tag, files in files_per_tag.items()}
+
     def get_stats(self) -> IndexStats:
         """Get index statistics.
 

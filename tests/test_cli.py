@@ -1342,6 +1342,61 @@ class TestSuggestLinksCommand:
             assert "Empirico/beta.md" in result.output
 
 
+class TestListTagsCommand:
+    """Test the list-tags command."""
+
+    def test_list_tags_empty_index(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """Empty index reports gracefully (no crash, exit 0)."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(app, ["list-tags", "--vault", str(vault_path)])
+
+            assert result.exit_code == 0
+            assert "no tags" in result.output.lower() or "0 " in result.output
+
+    def test_list_tags_human_readable(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """Tags appear in the output with their file counts."""
+        (vault_path / "a.md").write_text("---\ntags: [alpha, shared]\n---\n# A\nbody.\n")
+        (vault_path / "b.md").write_text("---\ntags: [beta, shared]\n---\n# B\nbody.\n")
+
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            runner.invoke(app, ["index", "--vault", str(vault_path)])
+
+            result = runner.invoke(app, ["list-tags", "--vault", str(vault_path)])
+
+            assert result.exit_code == 0
+            assert "alpha" in result.output
+            assert "beta" in result.output
+            assert "shared" in result.output
+            # 'shared' covers two files; the line should reflect that.
+            shared_line = next(
+                line for line in result.output.splitlines() if "shared" in line
+            )
+            assert "2" in shared_line
+
+    def test_list_tags_json(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """--json output is a valid dict mapping tag -> file count."""
+        (vault_path / "a.md").write_text("---\ntags: [alpha, shared]\n---\n# A\nbody.\n")
+        (vault_path / "b.md").write_text("---\ntags: [beta, shared]\n---\n# B\nbody.\n")
+
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            runner.invoke(app, ["index", "--vault", str(vault_path)])
+
+            result = runner.invoke(
+                app, ["list-tags", "--vault", str(vault_path), "--json"]
+            )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            # vault_path fixture seeds note1.md with tags: [test] — include it.
+            assert data == {"alpha": 1, "beta": 1, "shared": 2, "test": 1}
+
+
 class TestHelpOutput:
     """Test help output for commands."""
 

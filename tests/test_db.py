@@ -375,3 +375,55 @@ class TestStats:
         stats = db.get_stats()
         assert stats.chunk_count == 1
         assert stats.file_count == 1
+
+
+class TestListTags:
+    """Test listing distinct tags with file counts."""
+
+    def test_empty_db_has_no_tags(self, db: SemanticDB):
+        assert db.list_tags() == {}
+
+    def test_list_tags_counts_files_not_chunks(
+        self, db: SemanticDB, sample_chunks: list[ChunkRecord]
+    ):
+        """A tag on multiple chunks of one file counts as one file.
+
+        sample_chunks has python.md with two chunks both tagged 'python'
+        plus an additional 'advanced' on the second chunk. The 'python'
+        tag therefore covers 1 file (not 2 chunks).
+        """
+        db.upsert_chunks(sample_chunks)
+
+        tags = db.list_tags()
+
+        assert tags == {
+            "python": 1,        # python.md only
+            "programming": 2,   # python.md + rust.md
+            "advanced": 1,      # python.md (chunk 2 only)
+            "rust": 1,          # rust.md only
+        }
+
+    def test_list_tags_handles_chunks_without_tags(
+        self, db: SemanticDB
+    ):
+        """Chunks with empty tag lists do not contribute to the count."""
+        from datetime import datetime
+        now = datetime.now()
+        db.upsert_chunks([
+            ChunkRecord(
+                id="a.md#0", file_path="a.md", title="A", headers=[], text="x",
+                start_line=1, end_line=1, tags=[],
+                created_at=now, modified_at=now, indexed_at=now,
+                vector=[0.0] * 768,
+            ),
+            ChunkRecord(
+                id="b.md#0", file_path="b.md", title="B", headers=[], text="y",
+                start_line=1, end_line=1, tags=["only"],
+                created_at=now, modified_at=now, indexed_at=now,
+                vector=[0.0] * 768,
+            ),
+        ])
+
+        tags = db.list_tags()
+
+        assert tags == {"only": 1}
