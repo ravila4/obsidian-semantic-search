@@ -1045,6 +1045,67 @@ class TestShowCommand:
         assert "#Heading" in result.output
         assert "candidates" in result.output.lower()
 
+    def test_show_section_double_hash_rejected(
+        self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
+    ):
+        """`Note##Heading` is rejected rather than silently collapsing to `Note#Heading`."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app, ["show", "nested##Setup", "--vault", str(anchor_vault)]
+            )
+            assert result.exit_code != 0
+            assert "empty heading component" in result.stderr.lower()
+
+    def test_show_section_trailing_newline_is_single(
+        self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
+    ):
+        """Section output ends with exactly one trailing newline regardless of where in the file."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            # 'Other' is the last section in nested.md; the source ends with `Other body.\n`,
+            # so a naive join+echo combo would produce two trailing newlines.
+            last = runner.invoke(
+                app, ["show", "nested#Other", "--vault", str(anchor_vault)]
+            )
+            assert last.exit_code == 0
+            assert last.output.endswith("Other body.\n")
+            assert not last.output.endswith("Other body.\n\n")
+
+            # And a mid-file section ending right before another heading.
+            mid = runner.invoke(
+                app, ["show", "nested#Setup#Configuration", "--vault", str(anchor_vault)]
+            )
+            assert mid.exit_code == 0
+            assert mid.output.endswith("Config steps.\n")
+            assert not mid.output.endswith("Config steps.\n\n")
+
+    def test_show_section_unclosed_fence_suppresses_later_headings(
+        self, runner: CliRunner, tmp_path: Path, configured_mock: Mock
+    ):
+        """An unclosed fence at EOF makes subsequent headings unreachable (documented behavior)."""
+        vault = tmp_path / "unclosed-vault"
+        vault.mkdir()
+        (vault / "broken.md").write_text(
+            "## Before\n"
+            "Reachable body.\n"
+            "\n"
+            "```python\n"
+            "# this fence is never closed\n"
+            "## After\n"
+            "After body.\n"
+        )
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            # Heading before the unclosed fence still works.
+            ok = runner.invoke(app, ["show", "broken#Before", "--vault", str(vault)])
+            assert ok.exit_code == 0
+            assert "Reachable body." in ok.output
+
+            # Heading inside the unclosed fence is treated as code, not a section.
+            missing = runner.invoke(
+                app, ["show", "broken#After", "--vault", str(vault)]
+            )
+            assert missing.exit_code != 0
+            assert "Section not found" in missing.stderr
+
 
 class TestSuggestLinksCommand:
     """Test the suggest-links command."""

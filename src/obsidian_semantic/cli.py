@@ -475,7 +475,14 @@ def _split_note_anchor(arg: str) -> tuple[str, list[str]]:
     """Split a note argument into note name and heading path.
 
     'Note#A#B' -> ('Note', ['A', 'B']); no '#' -> empty heading list.
+    A single trailing '#' is tolerated as a no-op anchor; consecutive
+    '##' anywhere in the argument is rejected as a malformed component.
     """
+    if "##" in arg:
+        raise ValueError(
+            f"Invalid anchor in '{arg}': empty heading component "
+            "(use a single '#' between parts)."
+        )
     parts = arg.split("#")
     return parts[0], [h.strip() for h in parts[1:] if h.strip()]
 
@@ -574,7 +581,11 @@ def show(
     from obsidian_semantic.chunker import parse_note
 
     vault_path = _get_vault_path(vault)
-    note_arg, anchor_path = _split_note_anchor(note)
+    try:
+        note_arg, anchor_path = _split_note_anchor(note)
+    except ValueError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
     note_path = _resolve_note_path(vault_path, note_arg)
     content = note_path.read_text()
 
@@ -623,7 +634,10 @@ def show(
             end_line = line - 1
             break
     section_text = "\n".join(body_lines[start_line - 1 : end_line])
-    typer.echo(section_text)
+    # Strip any trailing newlines from the slice and let typer.echo add exactly
+    # one — keeps single-newline output regardless of whether the section ended
+    # with a blank line in the source. Matches the no-anchor path's predictability.
+    typer.echo(section_text.rstrip("\n"))
 
 
 @app.command("suggest-links")
