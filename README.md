@@ -31,7 +31,11 @@ obsidian-semantic search "dependency injection patterns"
 obsidian-semantic search "python testing" --limit 5
 obsidian-semantic search "docker" --folder "Programming/"
 obsidian-semantic search "habits" --tag "review"
+obsidian-semantic search "fisher" --score-min 0.6     # drop low-relevance hits
+obsidian-semantic search "fisher" --per-file 0        # show every matching chunk
 ```
+
+By default, results are deduped to one chunk per file so a long canonical note doesn't crowd out other matches. Pass `--per-file N` to allow up to N chunks per file (or `0` for unlimited).
 
 ### Find related notes
 

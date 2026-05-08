@@ -203,10 +203,44 @@ def index(
     typer.echo(f"Duration: {result.duration_seconds:.2f}s")
 
 
+# When post-filtering is active we over-fetch from LanceDB to leave headroom
+# for results that get dropped by the filters. Heuristic: assumes most notes
+# have <10 chunks, so 10x the requested limit (with a 50-row floor) is enough
+# to honor --limit even when one or two notes dominate the top-K. If a single
+# note has more chunks than this, the result list may end up shorter than
+# --limit; that's acceptable best-effort behavior.
+_OVERFETCH_FACTOR = 10
+_OVERFETCH_FLOOR = 50
+
+
+def _limit_per_file(
+    results: list[SearchResult], per_file: int
+) -> list[SearchResult]:
+    """Cap the number of chunks returned per file. Preserves input order."""
+    counts: dict[str, int] = {}
+    out: list[SearchResult] = []
+    for r in results:
+        c = counts.get(r.file_path, 0)
+        if c < per_file:
+            out.append(r)
+            counts[r.file_path] = c + 1
+    return out
+
+
 @app.command()
 def search(
     query: str = typer.Argument(..., help="Search query text."),
     limit: int = typer.Option(10, "--limit", "-n", help="Maximum results."),
+    per_file: int = typer.Option(
+        1,
+        "--per-file",
+        help="Max chunks per file (0 = unlimited). Default 1 returns one chunk per note.",
+    ),
+    score_min: float | None = typer.Option(
+        None,
+        "--score-min",
+        help="Drop results with similarity below this threshold (0-1).",
+    ),
     tags: list[str] | None = typer.Option(None, "--tag", "-t", help="Filter by tags."),
     folder: str | None = typer.Option(None, "--folder", help="Filter by folder."),
     vault: Path | None = typer.Option(
@@ -216,6 +250,9 @@ def search(
 ) -> None:
     """Search indexed content semantically."""
     from obsidian_semantic.db import SemanticDB
+
+    if limit < 1:
+        raise typer.BadParameter("--limit must be >= 1")
 
     vault_path = _get_vault_path(vault)
     config = load_config(vault_path)
@@ -228,12 +265,23 @@ def search(
     # Generate query embedding
     query_vector = embedder.embed_query([query])[0]
 
+    needs_overfetch = per_file > 0 or score_min is not None
+    fetch_limit = (
+        max(limit * _OVERFETCH_FACTOR, _OVERFETCH_FLOOR) if needs_overfetch else limit
+    )
+
     results = db.search(
         query_vector=query_vector,
-        limit=limit,
+        limit=fetch_limit,
         filter_tags=tags,
         filter_folder=folder,
     )
+
+    if score_min is not None:
+        results = [r for r in results if r.score >= score_min]
+    if per_file > 0:
+        results = _limit_per_file(results, per_file)
+    results = results[:limit]
 
     if not results:
         if json_output:
