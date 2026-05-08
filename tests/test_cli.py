@@ -252,6 +252,166 @@ class TestSearchCommand:
             assert "headers" in first
 
 
+@pytest.fixture
+def multi_chunk_vault(tmp_path: Path) -> Path:
+    """Vault with one note that produces multiple chunks (split on H2)."""
+    vault = tmp_path / "multi_vault"
+    vault.mkdir()
+    body = (
+        "## Section A\n"
+        + ("Detailed content about pythons and snakes. " * 8)
+        + "\n\n"
+        + "## Section B\n"
+        + ("More detailed material covering pythons. " * 8)
+        + "\n\n"
+        + "## Section C\n"
+        + ("Yet another long section discussing pythons. " * 8)
+        + "\n"
+    )
+    (vault / "big_note.md").write_text(body)
+    (vault / "other.md").write_text("# Other\n\nSomething different here.\n")
+    return vault
+
+
+class TestSearchPerFileAndScoreMin:
+    """Test --per-file dedup and --score-min threshold."""
+
+    def _configure(self, mock: Mock, vault: Path) -> Mock:
+        mock.database = str(vault / ".obsidian-semantic" / "index.lance")
+        return mock
+
+    def test_default_dedups_per_file(
+        self, runner: CliRunner, multi_chunk_vault: Path, configured_mock: Mock
+    ):
+        """Default search returns each file at most once."""
+        self._configure(configured_mock, multi_chunk_vault)
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            runner.invoke(app, ["index", "--vault", str(multi_chunk_vault)])
+            result = runner.invoke(
+                app,
+                ["search", "python", "--json", "--vault", str(multi_chunk_vault)],
+            )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            paths = [r["file_path"] for r in data]
+            assert len(paths) == len(set(paths)), (
+                f"expected unique file paths by default, got {paths}"
+            )
+
+    def test_per_file_zero_returns_all_chunks(
+        self, runner: CliRunner, multi_chunk_vault: Path, configured_mock: Mock
+    ):
+        """--per-file 0 disables dedup; multi-chunk note appears multiple times."""
+        self._configure(configured_mock, multi_chunk_vault)
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            runner.invoke(app, ["index", "--vault", str(multi_chunk_vault)])
+            result = runner.invoke(
+                app,
+                [
+                    "search",
+                    "python",
+                    "--per-file",
+                    "0",
+                    "--json",
+                    "--vault",
+                    str(multi_chunk_vault),
+                ],
+            )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            big_count = sum(1 for r in data if r["file_path"] == "big_note.md")
+            assert big_count > 1, (
+                f"big_note.md should appear multiple times with --per-file 0, "
+                f"got {big_count} (paths: {[r['file_path'] for r in data]})"
+            )
+
+    def test_per_file_two_caps_at_two(
+        self, runner: CliRunner, multi_chunk_vault: Path, configured_mock: Mock
+    ):
+        """--per-file 2 returns at most 2 chunks per file."""
+        self._configure(configured_mock, multi_chunk_vault)
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            runner.invoke(app, ["index", "--vault", str(multi_chunk_vault)])
+            result = runner.invoke(
+                app,
+                [
+                    "search",
+                    "python",
+                    "--per-file",
+                    "2",
+                    "--json",
+                    "--vault",
+                    str(multi_chunk_vault),
+                ],
+            )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            big_count = sum(1 for r in data if r["file_path"] == "big_note.md")
+            assert big_count <= 2, f"expected <=2 chunks for big_note.md, got {big_count}"
+
+    def test_score_min_filters_below_threshold(
+        self, runner: CliRunner, multi_chunk_vault: Path, configured_mock: Mock
+    ):
+        """--score-min above the achievable score returns no results."""
+        self._configure(configured_mock, multi_chunk_vault)
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            runner.invoke(app, ["index", "--vault", str(multi_chunk_vault)])
+            # Mock embedder yields identical vectors → score == 1.0;
+            # threshold > 1.0 must drop everything.
+            result = runner.invoke(
+                app,
+                [
+                    "search",
+                    "python",
+                    "--score-min",
+                    "1.5",
+                    "--json",
+                    "--vault",
+                    str(multi_chunk_vault),
+                ],
+            )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data == []
+
+    def test_score_min_passes_through(
+        self, runner: CliRunner, multi_chunk_vault: Path, configured_mock: Mock
+    ):
+        """--score-min below achievable score returns results."""
+        self._configure(configured_mock, multi_chunk_vault)
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            runner.invoke(app, ["index", "--vault", str(multi_chunk_vault)])
+            result = runner.invoke(
+                app,
+                [
+                    "search",
+                    "python",
+                    "--score-min",
+                    "0.5",
+                    "--json",
+                    "--vault",
+                    str(multi_chunk_vault),
+                ],
+            )
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert len(data) > 0
+            assert all(r["score"] >= 0.5 for r in data)
+
+    def test_search_help_includes_new_flags(self, runner: CliRunner):
+        """Help text mentions --per-file and --score-min."""
+        result = runner.invoke(app, ["search", "--help"])
+
+        assert result.exit_code == 0
+        assert "--per-file" in result.output
+        assert "--score-min" in result.output
+
+
 class TestConfigureCommand:
     """Test the configure command."""
 

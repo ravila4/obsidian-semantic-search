@@ -203,10 +203,34 @@ def index(
     typer.echo(f"Duration: {result.duration_seconds:.2f}s")
 
 
+def _limit_per_file(
+    results: list[SearchResult], per_file: int
+) -> list[SearchResult]:
+    """Cap the number of chunks returned per file. Preserves input order."""
+    counts: dict[str, int] = {}
+    out: list[SearchResult] = []
+    for r in results:
+        c = counts.get(r.file_path, 0)
+        if c < per_file:
+            out.append(r)
+            counts[r.file_path] = c + 1
+    return out
+
+
 @app.command()
 def search(
     query: str = typer.Argument(..., help="Search query text."),
     limit: int = typer.Option(10, "--limit", "-n", help="Maximum results."),
+    per_file: int = typer.Option(
+        1,
+        "--per-file",
+        help="Max chunks per file (0 = unlimited). Default 1 returns one chunk per note.",
+    ),
+    score_min: float | None = typer.Option(
+        None,
+        "--score-min",
+        help="Drop results with similarity below this threshold (0-1).",
+    ),
     tags: list[str] | None = typer.Option(None, "--tag", "-t", help="Filter by tags."),
     folder: str | None = typer.Option(None, "--folder", help="Filter by folder."),
     vault: Path | None = typer.Option(
@@ -228,12 +252,22 @@ def search(
     # Generate query embedding
     query_vector = embedder.embed_query([query])[0]
 
+    # Over-fetch when post-filtering, since we may discard many results.
+    needs_postfilter = per_file > 0 or score_min is not None
+    fetch_limit = max(limit * 10, 50) if needs_postfilter else limit
+
     results = db.search(
         query_vector=query_vector,
-        limit=limit,
+        limit=fetch_limit,
         filter_tags=tags,
         filter_folder=folder,
     )
+
+    if score_min is not None:
+        results = [r for r in results if r.score >= score_min]
+    if per_file > 0:
+        results = _limit_per_file(results, per_file)
+    results = results[:limit]
 
     if not results:
         if json_output:
