@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -56,7 +57,11 @@ def _print_results_rich(results: list[SearchResult], show_title: bool = False) -
             meta.append(f":{result.start_line}", style="dim")
         if result.headers:
             meta.append(f"  §  {' > '.join(result.headers)}", style="dim")
-        console.print(meta, overflow="ellipsis", no_wrap=True)
+        # Only ellipsize in a real terminal; piped output gets the full line.
+        if console.is_terminal:
+            console.print(meta, overflow="ellipsis", no_wrap=True)
+        else:
+            console.print(meta)
         console.print()
 
         body = result.text[:500]

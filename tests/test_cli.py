@@ -99,7 +99,8 @@ class TestStatusCommand:
     ):
         """Status prints a Pending counts line even when nothing is pending."""
         with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
-            runner.invoke(app, ["index", "--vault", str(vault_path)])
+            index_result = runner.invoke(app, ["index", "--vault", str(vault_path)])
+            assert index_result.exit_code == 0, index_result.output
 
             result = runner.invoke(app, ["status", "--vault", str(vault_path)])
 
@@ -670,8 +671,9 @@ class TestHelpOutput:
         assert "--vault" in result.output
 
     def test_search_help_describes_folder_match(self, runner: CliRunner):
-        """--folder help text clarifies it's a path prefix."""
+        """--folder help text clarifies it's a path prefix, case-sensitive."""
         result = runner.invoke(app, ["search", "--help"])
 
         assert result.exit_code == 0
-        assert "prefix" in result.output.lower()
+        assert "path prefix" in result.output.lower()
+        assert "case-sensitive" in result.output.lower()
