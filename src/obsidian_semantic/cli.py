@@ -409,6 +409,56 @@ def configure(
     typer.echo(f"Configuration saved to {config_file}")
 
 
+def _resolve_note_path(vault_path: Path, note_name: str) -> Path:
+    """Resolve a note name or vault-relative path to an absolute file path."""
+    candidates = [note_name]
+    if not note_name.endswith(".md"):
+        candidates.append(note_name + ".md")
+
+    for candidate in candidates:
+        direct = vault_path / candidate
+        if direct.is_file():
+            return direct
+
+    basenames = list(dict.fromkeys(Path(c).name for c in candidates if Path(c).suffix == ".md"))
+    matches: list[Path] = []
+    seen: set[Path] = set()
+    for basename in basenames:
+        for hit in vault_path.rglob(basename):
+            if not hit.is_file() or hit in seen:
+                continue
+            rel_parts = hit.relative_to(vault_path).parts
+            if any(p.startswith(".") for p in rel_parts[:-1]):
+                continue
+            seen.add(hit)
+            matches.append(hit)
+
+    if not matches:
+        typer.echo(f"Note not found: {note_name}", err=True)
+        raise typer.Exit(1)
+
+    if len(matches) > 1:
+        typer.echo(f"Ambiguous note name '{note_name}'. Candidates:", err=True)
+        for match in matches:
+            typer.echo(f"  {match.relative_to(vault_path)}", err=True)
+        raise typer.Exit(1)
+
+    return matches[0]
+
+
+@app.command()
+def show(
+    note: str = typer.Argument(..., help="Note name or path relative to vault root."),
+    vault: Path | None = typer.Option(
+        None, "--vault", "-v", help="Path to Obsidian vault."
+    ),
+) -> None:
+    """Print the full contents of a note."""
+    vault_path = _get_vault_path(vault)
+    note_path = _resolve_note_path(vault_path, note)
+    typer.echo(note_path.read_text(), nl=False)
+
+
 @app.command("suggest-links")
 def suggest_links(
     limit: int = typer.Option(20, "--limit", "-n", help="Maximum suggestions."),

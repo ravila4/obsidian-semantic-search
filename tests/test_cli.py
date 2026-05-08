@@ -463,6 +463,94 @@ class TestRelatedCommand:
             assert "text" in first
 
 
+class TestShowCommand:
+    """Test the show command."""
+
+    def test_show_direct_relative_path(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """show prints contents when given a relative path."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(app, ["show", "note1.md", "--vault", str(vault_path)])
+
+            assert result.exit_code == 0
+            assert "Content of note one." in result.output
+            assert "Note One" in result.output
+
+    def test_show_resolves_basename_in_subfolder(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """show finds a note by basename when it lives in a subfolder."""
+        sub = vault_path / "Sub Folder"
+        sub.mkdir()
+        (sub / "Fishers Test.md").write_text("# Fishers\n\nSubfolder body.\n")
+
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app, ["show", "Fishers Test.md", "--vault", str(vault_path)]
+            )
+
+            assert result.exit_code == 0
+            assert "Subfolder body." in result.output
+
+    def test_show_adds_md_extension(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """show appends .md if the user omits it."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(app, ["show", "note1", "--vault", str(vault_path)])
+
+            assert result.exit_code == 0
+            assert "Content of note one." in result.output
+
+    def test_show_file_not_found(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """show errors out to stderr when the note can't be found."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app, ["show", "does-not-exist.md", "--vault", str(vault_path)]
+            )
+
+            assert result.exit_code != 0
+            assert "not found" in result.stderr.lower()
+
+    def test_show_ambiguous_match(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """show errors out to stderr and lists candidates when basename matches multiple files."""
+        sub_a = vault_path / "A"
+        sub_b = vault_path / "B"
+        sub_a.mkdir()
+        sub_b.mkdir()
+        (sub_a / "duplicate.md").write_text("# A\n")
+        (sub_b / "duplicate.md").write_text("# B\n")
+
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app, ["show", "duplicate.md", "--vault", str(vault_path)]
+            )
+
+            assert result.exit_code != 0
+            assert "A/duplicate.md" in result.stderr
+            assert "B/duplicate.md" in result.stderr
+
+    def test_show_skips_dot_directories(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """show ignores files inside .obsidian/ and other dot-dirs when resolving names."""
+        obsidian = vault_path / ".obsidian" / "plugins"
+        obsidian.mkdir(parents=True)
+        (obsidian / "note1.md").write_text("# Plugin garbage\n")
+
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(app, ["show", "note1.md", "--vault", str(vault_path)])
+
+            assert result.exit_code == 0
+            assert "Content of note one." in result.output
+            assert "Plugin garbage" not in result.output
+
+
 class TestSuggestLinksCommand:
     """Test the suggest-links command."""
 
@@ -548,6 +636,7 @@ class TestHelpOutput:
         assert "status" in result.output
         assert "configure" in result.output
         assert "suggest-links" in result.output
+        assert "show" in result.output
 
     def test_index_help(self, runner: CliRunner):
         """Index help shows options."""
