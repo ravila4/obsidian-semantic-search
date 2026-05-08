@@ -203,6 +203,16 @@ def index(
     typer.echo(f"Duration: {result.duration_seconds:.2f}s")
 
 
+# When post-filtering is active we over-fetch from LanceDB to leave headroom
+# for results that get dropped by the filters. Heuristic: assumes most notes
+# have <10 chunks, so 10x the requested limit (with a 50-row floor) is enough
+# to honor --limit even when one or two notes dominate the top-K. If a single
+# note has more chunks than this, the result list may end up shorter than
+# --limit; that's acceptable best-effort behavior.
+_OVERFETCH_FACTOR = 10
+_OVERFETCH_FLOOR = 50
+
+
 def _limit_per_file(
     results: list[SearchResult], per_file: int
 ) -> list[SearchResult]:
@@ -241,6 +251,9 @@ def search(
     """Search indexed content semantically."""
     from obsidian_semantic.db import SemanticDB
 
+    if limit < 1:
+        raise typer.BadParameter("--limit must be >= 1")
+
     vault_path = _get_vault_path(vault)
     config = load_config(vault_path)
     db_path = _get_db_path(config.database, vault_path)
@@ -252,9 +265,10 @@ def search(
     # Generate query embedding
     query_vector = embedder.embed_query([query])[0]
 
-    # Over-fetch when post-filtering, since we may discard many results.
-    needs_postfilter = per_file > 0 or score_min is not None
-    fetch_limit = max(limit * 10, 50) if needs_postfilter else limit
+    needs_overfetch = per_file > 0 or score_min is not None
+    fetch_limit = (
+        max(limit * _OVERFETCH_FACTOR, _OVERFETCH_FLOOR) if needs_overfetch else limit
+    )
 
     results = db.search(
         query_vector=query_vector,

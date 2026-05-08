@@ -254,7 +254,13 @@ class TestSearchCommand:
 
 @pytest.fixture
 def multi_chunk_vault(tmp_path: Path) -> Path:
-    """Vault with one note that produces multiple chunks (split on H2)."""
+    """Vault with one note that produces multiple chunks (split on H2).
+
+    Verifies the chunker actually emits multiple chunks for big_note.md so
+    downstream per-file dedup tests aren't trivially passing on a single chunk.
+    """
+    from obsidian_semantic.chunker import NoteMetadata, chunk_note
+
     vault = tmp_path / "multi_vault"
     vault.mkdir()
     body = (
@@ -270,7 +276,80 @@ def multi_chunk_vault(tmp_path: Path) -> Path:
     )
     (vault / "big_note.md").write_text(body)
     (vault / "other.md").write_text("# Other\n\nSomething different here.\n")
+
+    chunks = list(chunk_note(body, "big_note.md", "big_note", NoteMetadata()))
+    assert len(chunks) >= 2, (
+        f"fixture is broken: big_note.md should produce multiple chunks, got {len(chunks)}"
+    )
     return vault
+
+
+def _mk_result(file_path: str, score: float, idx: int = 0):
+    """Construct a SearchResult for unit-testing post-filters."""
+    from obsidian_semantic.db import SearchResult
+
+    return SearchResult(
+        id=f"{file_path}#chunk_{idx}",
+        file_path=file_path,
+        title=Path(file_path).stem,
+        headers=[],
+        text=f"chunk {idx} of {file_path}",
+        score=score,
+        start_line=idx * 10,
+    )
+
+
+class TestLimitPerFile:
+    """Unit tests for the pure _limit_per_file helper.
+
+    Tests the post-filter directly with hand-crafted SearchResults so the
+    assertions don't depend on the mock embedder producing varied scores.
+    """
+
+    def test_caps_at_one_per_file(self):
+        from obsidian_semantic.cli import _limit_per_file
+
+        results = [
+            _mk_result("a.md", 0.9, 0),
+            _mk_result("a.md", 0.8, 1),
+            _mk_result("b.md", 0.7, 0),
+            _mk_result("a.md", 0.6, 2),
+        ]
+        out = _limit_per_file(results, 1)
+
+        assert [r.file_path for r in out] == ["a.md", "b.md"]
+
+    def test_caps_at_n_per_file(self):
+        from obsidian_semantic.cli import _limit_per_file
+
+        results = [
+            _mk_result("a.md", 0.9, 0),
+            _mk_result("a.md", 0.8, 1),
+            _mk_result("a.md", 0.7, 2),  # 3rd a.md → dropped at per_file=2
+            _mk_result("b.md", 0.6, 0),
+        ]
+        out = _limit_per_file(results, 2)
+
+        paths = [r.file_path for r in out]
+        assert paths == ["a.md", "a.md", "b.md"]
+
+    def test_preserves_input_order(self):
+        """First-seen wins per file (relevant when LanceDB returns sorted)."""
+        from obsidian_semantic.cli import _limit_per_file
+
+        results = [
+            _mk_result("a.md", 0.9, 0),  # highest-scoring a.md
+            _mk_result("b.md", 0.8, 0),
+            _mk_result("a.md", 0.5, 1),  # lower a.md, dropped at per_file=1
+        ]
+        out = _limit_per_file(results, 1)
+
+        assert [r.score for r in out] == [0.9, 0.8]
+
+    def test_empty_input(self):
+        from obsidian_semantic.cli import _limit_per_file
+
+        assert _limit_per_file([], 1) == []
 
 
 class TestSearchPerFileAndScoreMin:
@@ -410,6 +489,28 @@ class TestSearchPerFileAndScoreMin:
         assert result.exit_code == 0
         assert "--per-file" in result.output
         assert "--score-min" in result.output
+
+    def test_limit_zero_is_rejected(
+        self, runner: CliRunner, multi_chunk_vault: Path, configured_mock: Mock
+    ):
+        """--limit 0 errors out instead of silently returning nothing."""
+        self._configure(configured_mock, multi_chunk_vault)
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            runner.invoke(app, ["index", "--vault", str(multi_chunk_vault)])
+            result = runner.invoke(
+                app,
+                [
+                    "search",
+                    "python",
+                    "--limit",
+                    "0",
+                    "--vault",
+                    str(multi_chunk_vault),
+                ],
+            )
+
+            assert result.exit_code != 0
+            assert "limit" in result.output.lower()
 
 
 class TestConfigureCommand:
