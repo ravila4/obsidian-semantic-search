@@ -268,6 +268,19 @@ def search(
     config = load_config(vault_path)
     db_path = _get_db_path(config.database, vault_path)
 
+    if folder:
+        from obsidian_semantic.indexer import DEFAULT_IGNORE_PATTERNS, should_ignore
+
+        probe = Path(folder) / "probe.md"
+        if should_ignore(probe, DEFAULT_IGNORE_PATTERNS + list(config.ignore)):
+            typer.echo(
+                f"Note: '{folder}/' matches an entry in the 'ignore' config and "
+                f"is excluded from indexing — search will only see chunks from "
+                f"before the rule was added (edit ~/.config/obsidian-semantic/config.yaml "
+                f"or <vault>/.obsidian-semantic.yaml to change).",
+                err=True,
+            )
+
     embedder = config.create_embedder()
 
     db = SemanticDB(db_path, dimension=embedder.dimension)
@@ -478,10 +491,18 @@ def _split_note_anchor(arg: str) -> tuple[str, list[str]]:
     Runs of '#' (e.g. 'Note##Topics###Subsection') collapse to a single
     separator, so users can paste raw markdown heading prefixes — the
     leading hash count encodes level, which we don't need for matching.
-    Trailing/empty components are dropped.
+
+    A '#' that yields no heading components ('Note#', 'Note##') is
+    rejected: the user clearly meant to anchor somewhere but didn't
+    say where, and silently returning the whole note hides the typo.
     """
     parts = arg.split("#")
-    return parts[0], [h.strip() for h in parts[1:] if h.strip()]
+    anchors = [h.strip() for h in parts[1:] if h.strip()]
+    if len(parts) > 1 and not anchors:
+        raise ValueError(
+            f"Invalid anchor in '{arg}': '#' supplied but no heading given."
+        )
+    return parts[0], anchors
 
 
 def _walk_breadcrumbs(body: str) -> list[tuple[int, int, list[str]]]:
@@ -574,11 +595,20 @@ def show(
         None, "--vault", "-v", help="Path to Obsidian vault."
     ),
 ) -> None:
-    """Print the full contents of a note (or a specific section)."""
+    """Print the full contents of a note (or a specific section).
+
+    Reads directly from the filesystem, so it works on un-indexed paths
+    too — handy for fresh notes you haven't reindexed yet (unlike search,
+    which only sees what's in the vector index).
+    """
     from obsidian_semantic.chunker import parse_note
 
     vault_path = _get_vault_path(vault)
-    note_arg, anchor_path = _split_note_anchor(note)
+    try:
+        note_arg, anchor_path = _split_note_anchor(note)
+    except ValueError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
     note_path = _resolve_note_path(vault_path, note_arg)
     content = note_path.read_text()
 

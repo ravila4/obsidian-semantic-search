@@ -267,6 +267,48 @@ class TestSearchCommand:
             assert "score" in first
             assert "text" in first
             assert "headers" in first
+            assert "chunk_id" in first
+
+    def test_search_warns_when_folder_is_ignored(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """Searching with --folder X where X matches an ignore pattern surfaces a stderr hint."""
+        configured_mock.ignore = ["Templates/*"]
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app,
+                ["search", "anything", "--folder", "Templates", "--vault", str(vault_path)],
+            )
+            assert result.exit_code == 0
+            assert "excluded from indexing" in result.stderr.lower()
+            assert "Templates" in result.stderr
+            # Pointing the user at the config is the whole point of the warning.
+            assert "config" in result.stderr.lower()
+
+    def test_search_no_warning_for_indexed_folder(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """A normal --folder filter doesn't trigger the ignore warning."""
+        configured_mock.ignore = ["Templates/*"]
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app,
+                ["search", "anything", "--folder", "Programming", "--vault", str(vault_path)],
+            )
+            assert result.exit_code == 0
+            assert "excluded from indexing" not in result.stderr.lower()
+
+    def test_search_warns_for_default_dotfolders(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """Built-in default ignores (.obsidian, .git) also trigger the warning."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app,
+                ["search", "anything", "--folder", ".obsidian", "--vault", str(vault_path)],
+            )
+            assert result.exit_code == 0
+            assert "excluded from indexing" in result.stderr.lower()
 
 
 @pytest.fixture
@@ -306,7 +348,7 @@ def _mk_result(file_path: str, score: float, idx: int = 0):
     from obsidian_semantic.db import SearchResult
 
     return SearchResult(
-        id=f"{file_path}#chunk_{idx}",
+        chunk_id=f"{file_path}#chunk_{idx}",
         file_path=file_path,
         title=Path(file_path).stem,
         headers=[],
@@ -1092,6 +1134,20 @@ class TestShowCommand:
             assert single.exit_code == 0
             assert doubled.exit_code == 0
             assert single.output == doubled.output
+
+    def test_show_trailing_hash_with_no_section_errors(
+        self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
+    ):
+        """`Note#` and `Note##` (no heading after the '#') error rather than
+        silently returning the whole note — the hash signals 'I want to
+        anchor somewhere' and an empty target is almost certainly a typo."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            for arg in ("nested#", "nested##"):
+                result = runner.invoke(
+                    app, ["show", arg, "--vault", str(anchor_vault)]
+                )
+                assert result.exit_code != 0, f"{arg!r} unexpectedly succeeded"
+                assert "no heading" in result.stderr.lower()
 
     def test_show_section_trailing_newline_is_single(
         self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
