@@ -23,6 +23,8 @@ Score interpretation is the single biggest source of friction. Bands below are e
 
 **Topic-absent heuristic.** If the top 5 results are all < 0.45 *and* the snippets drift off-topic, the vault is silent on that topic — declare it absent rather than mining lower. This pattern is more reliable than any single threshold.
 
+**Short notes under-score.** Terse notes (a few hundred words, no long-form expansion) routinely cap 0.05–0.10 below these bands even when they're the canonical match. When repeated paraphrases converge on the same note, trust the convergence over the absolute score.
+
 ### `suggest-links` (note-level averaged cosine — different scale!)
 
 Note-level embeddings are smoothed averages of chunk vectors, so the scale sits much higher and tighter:
@@ -87,7 +89,11 @@ obsidian-semantic suggest-links --threshold 0.85 --limit 30
 # (repeatable) or set suggest_links.exclude_same_folder in config.
 ```
 
-Always `show` both notes before declaring a duplicate. The default `--limit 20` is too narrow for a vault-wide audit; bump to 30-50.
+Always `show` both notes before declaring a duplicate. Two patterns to distinguish in the 0.88–0.94 grey zone:
+- **Shared content sections** (overlapping prose, same headings) → merge candidate
+- **Shared terminology with complementary roles** (producer/consumer, V6/V7, before/after) → link, don't merge
+
+The default `--limit 20` is too narrow for a vault-wide audit; bump to 30-50.
 
 **Folder name must match exactly.** `--exclude-same-folder "daily-log"` will not match a folder named `Daily Log` (with the space). The CLI warns to stderr if a value isn't a real top-level vault folder.
 
@@ -138,7 +144,7 @@ obsidian-semantic search "<q>" --limit 1 --json \
 Caveats:
 - `tags` is **not** present in `--json` output (gap to be aware of, no current workaround)
 - `headers` may be empty `[]` for short notes that weren't chunked (just `show <file_path>`)
-- `show <Note>#<Heading>` includes the markdown `## Heading` line in its output. Strip the heading line before computing offsets into the body.
+- `show <Note>#<Heading>` includes the markdown `## Heading` line followed by a blank line. Strip with `tail -n +3` (or equivalent) before computing offsets into the body.
 
 ## Tag filtering and discovery
 
@@ -152,6 +158,8 @@ obsidian-semantic search "asdf qwerty" --tag "<candidate>" --json
 
 Do **not** probe with a meaningful query — the results conflate tag-filtering with topical match, making it ambiguous whether the tag is real or whether the query merely scored above zero on its own.
 
+Common starter candidates worth probing first in a personal Obsidian vault: `project`, `moc`, `daily`, `meeting`, `book`, `person`, `idea`, plus any obvious domain words from the user's stated context (e.g. `bioinformatics`, `statistics`, `programming`). Treat these as a seed list, not a comprehensive set.
+
 ## Known limitations to recognize
 
 | Limitation | Symptom | Workaround |
@@ -159,6 +167,7 @@ Do **not** probe with a meaningful query — the results conflate tag-filtering 
 | **Hub notes** dominate broad queries | Long notes, MOC indexes, or auto-generated catalogs surface across unrelated topics | Treat repeat appearances under varied queries as a hub-warning, not a relevance signal |
 | **`related` quality varies by seed** | Densely-connected topical seeds → great; outlier or auto-generated seeds → wandering tangents | Use `related` after one solid `search` hit, not as primary discovery |
 | **Stub boilerplate causes false positives** | Templated text in §Related sections (e.g. "Use obsidian-semantic related ... to populate") matches tool-related queries | Recognize and filter the boilerplate when you see it in snippets |
+| **Short-stub vs long-parent blindspot** | A short note absorbed by a longer parent (e.g. transcluded stub) scores low on `suggest-links` because the parent's averaged embedding is dominated by content the stub doesn't have | Run `related <stub-path>` directly when auditing a short note that should be reviewed for redundancy |
 | **No time / date filters** | Can't query "since 2026-04-01" | Scope with `--folder` and sort by filename |
 | **Snippets truncate mid-sentence** | `...` cuts off context | Use `show` to verify before quoting |
 | **`status` doesn't show embedder model** | Can't tell from `status` whether index is nomic vs qwen3 | Read `~/.config/obsidian-semantic/config.yaml`; index size also disambiguates (4096-dim ≈ 16 KB/chunk, 768-dim ≈ 3 KB/chunk) |
