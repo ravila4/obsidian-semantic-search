@@ -6,6 +6,8 @@ Semantic search for Obsidian vaults. Index your vault into vector embeddings, th
   <img src="docs/screenshot.svg" alt="obsidian-semantic CLI" width="600">
 </p>
 
+> **Using this with an AI agent (Claude Code, Cursor, etc.)?** See [SKILL.md](SKILL.md) for agent-facing guidance — score interpretation, workflows, and known gotchas.
+
 ## Setup
 
 ```bash
