@@ -475,14 +475,11 @@ def _split_note_anchor(arg: str) -> tuple[str, list[str]]:
     """Split a note argument into note name and heading path.
 
     'Note#A#B' -> ('Note', ['A', 'B']); no '#' -> empty heading list.
-    A single trailing '#' is tolerated as a no-op anchor; consecutive
-    '##' anywhere in the argument is rejected as a malformed component.
+    Runs of '#' (e.g. 'Note##Topics###Subsection') collapse to a single
+    separator, so users can paste raw markdown heading prefixes — the
+    leading hash count encodes level, which we don't need for matching.
+    Trailing/empty components are dropped.
     """
-    if "##" in arg:
-        raise ValueError(
-            f"Invalid anchor in '{arg}': empty heading component "
-            "(use a single '#' between parts)."
-        )
     parts = arg.split("#")
     return parts[0], [h.strip() for h in parts[1:] if h.strip()]
 
@@ -581,11 +578,7 @@ def show(
     from obsidian_semantic.chunker import parse_note
 
     vault_path = _get_vault_path(vault)
-    try:
-        note_arg, anchor_path = _split_note_anchor(note)
-    except ValueError as e:
-        typer.echo(str(e), err=True)
-        raise typer.Exit(1) from e
+    note_arg, anchor_path = _split_note_anchor(note)
     note_path = _resolve_note_path(vault_path, note_arg)
     content = note_path.read_text()
 
@@ -614,7 +607,7 @@ def show(
         typer.echo(f"Section not found in {rel_path}: '{anchor_str}'", err=True)
         typer.echo("Available sections:", err=True)
         for _, _, bc in breadcrumbs:
-            typer.echo(f"  {' > '.join(bc)}", err=True)
+            typer.echo(f"  {note_arg}#{'#'.join(bc)}", err=True)
         raise typer.Exit(1)
 
     if len(matches) > 1:
@@ -623,7 +616,7 @@ def show(
             err=True,
         )
         for line, _, bc in matches:
-            typer.echo(f"  L{line}: {' > '.join(bc)}", err=True)
+            typer.echo(f"  L{line}: {note_arg}#{'#'.join(bc)}", err=True)
         raise typer.Exit(1)
 
     start_line, level, _ = matches[0]
