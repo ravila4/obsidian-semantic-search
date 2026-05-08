@@ -1,6 +1,7 @@
 """Tests for the CLI commands."""
 
 import json
+import re
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -826,6 +827,284 @@ class TestShowCommand:
             assert result.exit_code == 0
             assert "Content of note one." in result.output
             assert "Plugin garbage" not in result.output
+
+    @pytest.fixture
+    def anchor_vault(self, tmp_path: Path) -> Path:
+        """Vault with notes designed to exercise heading-anchor matching."""
+        vault = tmp_path / "anchor-vault"
+        vault.mkdir()
+        (vault / "nested.md").write_text(
+            "---\n"
+            "tags: [test]\n"
+            "---\n"
+            "# Title\n"
+            "\n"
+            "## Setup\n"
+            "Setup body line.\n"
+            "\n"
+            "### Installation\n"
+            "Install steps.\n"
+            "\n"
+            "#### Linux\n"
+            "Linux details.\n"
+            "\n"
+            "### Configuration\n"
+            "Config steps.\n"
+            "\n"
+            "## Other\n"
+            "Other body.\n"
+        )
+        (vault / "code.md").write_text(
+            "## Real Heading\n"
+            "Real body.\n"
+            "\n"
+            "```python\n"
+            "## fake heading inside fence\n"
+            "x = 1\n"
+            "```\n"
+            "\n"
+            "## Next Real\n"
+            "Next body.\n"
+        )
+        (vault / "noheadings.md").write_text(
+            "Just a paragraph with no headings at all.\n"
+        )
+        (vault / "dupes.md").write_text(
+            "## Alpha\n"
+            "### Repeat\n"
+            "first body.\n"
+            "\n"
+            "## Beta\n"
+            "### Repeat\n"
+            "second body.\n"
+        )
+        return vault
+
+    def test_show_prints_section_by_anchor(
+        self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
+    ):
+        """`show note#Heading` prints just that section."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app, ["show", "nested#Other", "--vault", str(anchor_vault)]
+            )
+            assert result.exit_code == 0
+            assert "## Other" in result.output
+            assert "Other body." in result.output
+            assert "Setup body line." not in result.output
+
+    def test_show_section_includes_heading_line_and_stops_at_next_sibling(
+        self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
+    ):
+        """Section output starts at the heading line and ends before the next sibling/parent."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app, ["show", "nested#Setup", "--vault", str(anchor_vault)]
+            )
+            assert result.exit_code == 0
+            assert "## Setup" in result.output
+            assert "Setup body line." in result.output
+            # Nested headings inside Setup should be included
+            assert "### Installation" in result.output
+            assert "### Configuration" in result.output
+            # The next H2 sibling must NOT bleed in
+            assert "## Other" not in result.output
+            assert "Other body." not in result.output
+
+    def test_show_section_case_insensitive(
+        self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
+    ):
+        """Heading match is case-insensitive."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app, ["show", "nested#sEtUp", "--vault", str(anchor_vault)]
+            )
+            assert result.exit_code == 0
+            assert "Setup body line." in result.output
+
+    def test_show_section_nested(
+        self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
+    ):
+        """`note#Parent#Child` returns only the child sub-section."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app,
+                ["show", "nested#Setup#Installation", "--vault", str(anchor_vault)],
+            )
+            assert result.exit_code == 0
+            assert "### Installation" in result.output
+            assert "Install steps." in result.output
+            # Sibling H3 must not appear
+            assert "### Configuration" not in result.output
+            assert "Config steps." not in result.output
+            # Parent body must not appear
+            assert "Setup body line." not in result.output
+
+    def test_show_section_suffix_matches_deep_breadcrumb(
+        self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
+    ):
+        """`note#Installation` finds a section whose breadcrumb is `Setup > Installation`."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app, ["show", "nested#Installation", "--vault", str(anchor_vault)]
+            )
+            assert result.exit_code == 0
+            assert "### Installation" in result.output
+            assert "Install steps." in result.output
+
+    def test_show_section_h4_reachable(
+        self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
+    ):
+        """H4 headings are reachable via anchors (chunker-independent)."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app,
+                [
+                    "show",
+                    "nested#Setup#Installation#Linux",
+                    "--vault",
+                    str(anchor_vault),
+                ],
+            )
+            assert result.exit_code == 0
+            assert "#### Linux" in result.output
+            assert "Linux details." in result.output
+            # Sibling H3 below the H4 must not appear
+            assert "### Configuration" not in result.output
+
+    def test_show_section_inside_code_block_ignored(
+        self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
+    ):
+        """A `## ...` line inside a fenced code block is not treated as a section."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app,
+                ["show", "code#fake heading inside fence", "--vault", str(anchor_vault)],
+            )
+            assert result.exit_code != 0
+            assert "Section not found" in result.stderr
+
+            # The two real headings DO match.
+            real = runner.invoke(
+                app, ["show", "code#Real Heading", "--vault", str(anchor_vault)]
+            )
+            assert real.exit_code == 0
+            assert "Real body." in real.output
+            # The fake heading line lives inside a code block but should not act as
+            # a section boundary, so it stays embedded in the section output.
+            assert "## fake heading inside fence" in real.output
+            # And we must stop before the next REAL H2.
+            assert "Next body." not in real.output
+
+    def test_show_section_no_headings_in_note(
+        self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
+    ):
+        """Anchoring into a note with no headings produces a specific error."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app, ["show", "noheadings#anything", "--vault", str(anchor_vault)]
+            )
+            assert result.exit_code != 0
+            assert "no addressable headings" in result.stderr.lower()
+
+    def test_show_section_not_found_lists_available(
+        self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
+    ):
+        """A bad anchor lists available section breadcrumbs on stderr."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app, ["show", "nested#does-not-exist", "--vault", str(anchor_vault)]
+            )
+            assert result.exit_code != 0
+            assert "Section not found" in result.stderr
+            assert "does-not-exist" in result.stderr
+            assert "Available sections:" in result.stderr
+            # Real breadcrumbs from the file
+            assert "Setup > Installation" in result.stderr
+            assert "Other" in result.stderr
+
+    def test_show_section_ambiguous_lists_with_line_numbers(
+        self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
+    ):
+        """Same heading text twice in one note → both candidates listed with line numbers."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app, ["show", "dupes#Repeat", "--vault", str(anchor_vault)]
+            )
+            assert result.exit_code != 0
+            assert "Ambiguous section" in result.stderr
+            assert "Alpha > Repeat" in result.stderr
+            assert "Beta > Repeat" in result.stderr
+            # Line numbers ('L<n>') give the user something to anchor on
+            assert re.search(r"L\d+:", result.stderr)
+
+    def test_show_help_documents_anchor_and_ambiguity(self, runner: CliRunner):
+        """`show --help` mentions `#Heading` syntax and the basename-collision behavior."""
+        result = runner.invoke(app, ["show", "--help"])
+        assert result.exit_code == 0
+        assert "#Heading" in result.output
+        assert "candidates" in result.output.lower()
+
+    def test_show_section_double_hash_rejected(
+        self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
+    ):
+        """`Note##Heading` is rejected rather than silently collapsing to `Note#Heading`."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            result = runner.invoke(
+                app, ["show", "nested##Setup", "--vault", str(anchor_vault)]
+            )
+            assert result.exit_code != 0
+            assert "empty heading component" in result.stderr.lower()
+
+    def test_show_section_trailing_newline_is_single(
+        self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
+    ):
+        """Section output ends with exactly one trailing newline regardless of where in the file."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            # 'Other' is the last section in nested.md; the source ends with `Other body.\n`,
+            # so a naive join+echo combo would produce two trailing newlines.
+            last = runner.invoke(
+                app, ["show", "nested#Other", "--vault", str(anchor_vault)]
+            )
+            assert last.exit_code == 0
+            assert last.output.endswith("Other body.\n")
+            assert not last.output.endswith("Other body.\n\n")
+
+            # And a mid-file section ending right before another heading.
+            mid = runner.invoke(
+                app, ["show", "nested#Setup#Configuration", "--vault", str(anchor_vault)]
+            )
+            assert mid.exit_code == 0
+            assert mid.output.endswith("Config steps.\n")
+            assert not mid.output.endswith("Config steps.\n\n")
+
+    def test_show_section_unclosed_fence_suppresses_later_headings(
+        self, runner: CliRunner, tmp_path: Path, configured_mock: Mock
+    ):
+        """An unclosed fence at EOF makes subsequent headings unreachable (documented behavior)."""
+        vault = tmp_path / "unclosed-vault"
+        vault.mkdir()
+        (vault / "broken.md").write_text(
+            "## Before\n"
+            "Reachable body.\n"
+            "\n"
+            "```python\n"
+            "# this fence is never closed\n"
+            "## After\n"
+            "After body.\n"
+        )
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            # Heading before the unclosed fence still works.
+            ok = runner.invoke(app, ["show", "broken#Before", "--vault", str(vault)])
+            assert ok.exit_code == 0
+            assert "Reachable body." in ok.output
+
+            # Heading inside the unclosed fence is treated as code, not a section.
+            missing = runner.invoke(
+                app, ["show", "broken#After", "--vault", str(vault)]
+            )
+            assert missing.exit_code != 0
+            assert "Section not found" in missing.stderr
 
 
 class TestSuggestLinksCommand:
