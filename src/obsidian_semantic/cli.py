@@ -56,7 +56,7 @@ def _print_results_rich(results: list[SearchResult], show_title: bool = False) -
             meta.append(f":{result.start_line}", style="dim")
         if result.headers:
             meta.append(f"  §  {' > '.join(result.headers)}", style="dim")
-        console.print(meta)
+        console.print(meta, overflow="ellipsis", no_wrap=True)
         console.print()
 
         body = result.text[:500]
@@ -133,28 +133,29 @@ def status(
     )
     pending = indexer.get_pending_changes()
 
-    if pending.has_changes:
-        typer.echo(f"\nPending changes ({pending.total_count} files):")
-        if pending.new_files:
-            typer.echo(f"  New: {len(pending.new_files)} files")
-            for file_path in pending.new_files[:5]:
-                typer.echo(f"    - {file_path}")
-            if len(pending.new_files) > 5:
-                typer.echo(f"    ... and {len(pending.new_files) - 5} more")
-        if pending.modified_files:
-            typer.echo(f"  Modified: {len(pending.modified_files)} files")
-            for file_path in pending.modified_files[:5]:
-                typer.echo(f"    - {file_path}")
-            if len(pending.modified_files) > 5:
-                typer.echo(f"    ... and {len(pending.modified_files) - 5} more")
-        if pending.deleted_files:
-            typer.echo(f"  Deleted: {len(pending.deleted_files)} files")
-            for file_path in pending.deleted_files[:5]:
-                typer.echo(f"    - {file_path}")
-            if len(pending.deleted_files) > 5:
-                typer.echo(f"    ... and {len(pending.deleted_files) - 5} more")
-    else:
-        typer.echo("\nAll files up to date.")
+    typer.echo(
+        f"\nPending: {len(pending.new_files)} new, "
+        f"{len(pending.modified_files)} modified, "
+        f"{len(pending.deleted_files)} deleted"
+    )
+    if pending.new_files:
+        typer.echo("  New:")
+        for file_path in pending.new_files[:5]:
+            typer.echo(f"    - {file_path}")
+        if len(pending.new_files) > 5:
+            typer.echo(f"    ... and {len(pending.new_files) - 5} more")
+    if pending.modified_files:
+        typer.echo("  Modified:")
+        for file_path in pending.modified_files[:5]:
+            typer.echo(f"    - {file_path}")
+        if len(pending.modified_files) > 5:
+            typer.echo(f"    ... and {len(pending.modified_files) - 5} more")
+    if pending.deleted_files:
+        typer.echo("  Deleted:")
+        for file_path in pending.deleted_files[:5]:
+            typer.echo(f"    - {file_path}")
+        if len(pending.deleted_files) > 5:
+            typer.echo(f"    ... and {len(pending.deleted_files) - 5} more")
 
 
 @app.command()
@@ -208,7 +209,11 @@ def search(
     query: str = typer.Argument(..., help="Search query text."),
     limit: int = typer.Option(10, "--limit", "-n", help="Maximum results."),
     tags: list[str] | None = typer.Option(None, "--tag", "-t", help="Filter by tags."),
-    folder: str | None = typer.Option(None, "--folder", help="Filter by folder."),
+    folder: str | None = typer.Option(
+        None,
+        "--folder",
+        help="Filter to files under this path prefix (case-sensitive, e.g. 'Statistics').",
+    ),
     vault: Path | None = typer.Option(
         None, "--vault", "-v", help="Path to Obsidian vault."
     ),

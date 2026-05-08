@@ -94,6 +94,21 @@ class TestStatusCommand:
             assert result.exit_code == 0
             assert "2 files" in result.output or "files" in result.output.lower()
 
+    def test_status_always_prints_pending_counts(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """Status prints a Pending counts line even when nothing is pending."""
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            runner.invoke(app, ["index", "--vault", str(vault_path)])
+
+            result = runner.invoke(app, ["status", "--vault", str(vault_path)])
+
+            assert result.exit_code == 0
+            assert "Pending:" in result.output
+            assert "0 new" in result.output
+            assert "0 modified" in result.output
+            assert "0 deleted" in result.output
+
     def test_status_shows_pending_changes(
         self, runner: CliRunner, vault_path: Path, configured_mock: Mock
     ):
@@ -653,3 +668,10 @@ class TestHelpOutput:
         assert result.exit_code == 0
         assert "--limit" in result.output
         assert "--vault" in result.output
+
+    def test_search_help_describes_folder_match(self, runner: CliRunner):
+        """--folder help text clarifies it's a path prefix."""
+        result = runner.invoke(app, ["search", "--help"])
+
+        assert result.exit_code == 0
+        assert "prefix" in result.output.lower()
