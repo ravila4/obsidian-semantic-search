@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -466,6 +467,56 @@ def configure(
     typer.echo(f"Configuration saved to {config_file}")
 
 
+HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def _split_note_anchor(arg: str) -> tuple[str, list[str]]:
+    """Split a note argument into note name and heading path.
+
+    'Note#A#B' -> ('Note', ['A', 'B']); no '#' -> empty heading list.
+    """
+    parts = arg.split("#")
+    return parts[0], [h.strip() for h in parts[1:] if h.strip()]
+
+
+def _walk_breadcrumbs(body: str) -> list[tuple[int, int, list[str]]]:
+    """Walk a note body and yield (line_num, level, breadcrumb) per heading.
+
+    Line numbers are 1-indexed within the body (after frontmatter stripping).
+    Headings inside fenced code blocks are skipped, so a `## ...` line that
+    happens to live inside ```` ``` ```` is not treated as a section start.
+    """
+    lines = body.split("\n")
+    out: list[tuple[int, int, list[str]]] = []
+    stack: list[tuple[int, str]] = []  # (level, text)
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for i, line in enumerate(lines):
+        m_fence = FENCE_RE.match(line)
+        if m_fence:
+            marker = m_fence.group(1)
+            char, ln = marker[0], len(marker)
+            if not in_fence:
+                in_fence, fence_char, fence_len = True, char, ln
+            elif char == fence_char and ln >= fence_len:
+                in_fence, fence_char, fence_len = False, "", 0
+            continue
+        if in_fence:
+            continue
+        m = HEADING_RE.match(line)
+        if not m:
+            continue
+        level = len(m.group(1))
+        text = m.group(2).strip()
+        while stack and stack[-1][0] >= level:
+            stack.pop()
+        stack.append((level, text))
+        out.append((i + 1, level, [t for _, t in stack]))
+    return out
+
+
 def _resolve_note_path(vault_path: Path, note_name: str) -> Path:
     """Resolve a note name or vault-relative path to an absolute file path."""
     candidates = [note_name]
@@ -505,15 +556,74 @@ def _resolve_note_path(vault_path: Path, note_name: str) -> Path:
 
 @app.command()
 def show(
-    note: str = typer.Argument(..., help="Note name or path relative to vault root."),
+    note: str = typer.Argument(
+        ...,
+        help=(
+            "Note name or path relative to vault root. Append '#Heading' to "
+            "print only that section (e.g. 'Note#Setup' or "
+            "'Note#Setup#Installation'); pass more of the breadcrumb path to "
+            "disambiguate. If a basename matches multiple notes, candidates "
+            "are listed and the command exits with an error."
+        ),
+    ),
     vault: Path | None = typer.Option(
         None, "--vault", "-v", help="Path to Obsidian vault."
     ),
 ) -> None:
-    """Print the full contents of a note."""
+    """Print the full contents of a note (or a specific section)."""
+    from obsidian_semantic.chunker import parse_note
+
     vault_path = _get_vault_path(vault)
-    note_path = _resolve_note_path(vault_path, note)
-    typer.echo(note_path.read_text(), nl=False)
+    note_arg, anchor_path = _split_note_anchor(note)
+    note_path = _resolve_note_path(vault_path, note_arg)
+    content = note_path.read_text()
+
+    if not anchor_path:
+        typer.echo(content, nl=False)
+        return
+
+    rel_path = str(note_path.relative_to(vault_path))
+    _, body = parse_note(content, rel_path)
+    breadcrumbs = _walk_breadcrumbs(body)
+
+    if not breadcrumbs:
+        typer.echo(f"Note '{rel_path}' has no addressable headings.", err=True)
+        raise typer.Exit(1)
+
+    target = [a.lower() for a in anchor_path]
+    n = len(target)
+    matches = [
+        (line, level, bc)
+        for line, level, bc in breadcrumbs
+        if len(bc) >= n and [h.lower() for h in bc[-n:]] == target
+    ]
+    anchor_str = "#".join(anchor_path)
+
+    if not matches:
+        typer.echo(f"Section not found in {rel_path}: '{anchor_str}'", err=True)
+        typer.echo("Available sections:", err=True)
+        for _, _, bc in breadcrumbs:
+            typer.echo(f"  {' > '.join(bc)}", err=True)
+        raise typer.Exit(1)
+
+    if len(matches) > 1:
+        typer.echo(
+            f"Ambiguous section '{anchor_str}' in {rel_path}. Candidates:",
+            err=True,
+        )
+        for line, _, bc in matches:
+            typer.echo(f"  L{line}: {' > '.join(bc)}", err=True)
+        raise typer.Exit(1)
+
+    start_line, level, _ = matches[0]
+    body_lines = body.split("\n")
+    end_line = len(body_lines)
+    for line, lvl, _ in breadcrumbs:
+        if line > start_line and lvl <= level:
+            end_line = line - 1
+            break
+    section_text = "\n".join(body_lines[start_line - 1 : end_line])
+    typer.echo(section_text)
 
 
 @app.command("suggest-links")
