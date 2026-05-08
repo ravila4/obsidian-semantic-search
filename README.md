@@ -44,6 +44,15 @@ obsidian-semantic related "Daily/2026-02-05.md" --limit 5
 
 Works with both indexed and unindexed notes -- if the note isn't in the index yet, it gets chunked and embedded on the fly.
 
+### Show a note
+
+Print the full contents of a note straight to stdout. Accepts a vault-relative path or a bare filename (with or without `.md`); if the basename is unique, it's resolved automatically.
+
+```bash
+obsidian-semantic show "Fisher's Exact in Empiroar.md"
+obsidian-semantic show "Programming/Python/Unit Testing.md"
+```
+
 ### Suggest missing links
 
 Find semantically similar notes that aren't linked to each other -- surfaces missing wikilinks and potential duplicates.
