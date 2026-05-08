@@ -1019,9 +1019,39 @@ class TestShowCommand:
             assert "Section not found" in result.stderr
             assert "does-not-exist" in result.stderr
             assert "Available sections:" in result.stderr
-            # Real breadcrumbs from the file
-            assert "Setup > Installation" in result.stderr
-            assert "Other" in result.stderr
+            # Listings are printed in canonical 'note#A#B' form so they can be
+            # copy-pasted directly back into a `show` invocation.
+            assert "nested#Title#Setup#Installation" in result.stderr
+            assert "nested#Title#Other" in result.stderr
+
+    def test_show_section_listing_roundtrips_through_parser(
+        self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
+    ):
+        """A path printed in the 'Available sections' listing must parse cleanly when fed back in.
+
+        Roundtrip contract: the error output is the parser's input format. If this
+        ever regresses (e.g. someone reintroduces ' > ' as the separator) this test
+        catches it before users do.
+        """
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            bad = runner.invoke(
+                app, ["show", "nested#does-not-exist", "--vault", str(anchor_vault)]
+            )
+            assert bad.exit_code != 0
+
+            listed = [
+                line.strip()
+                for line in bad.stderr.splitlines()
+                if line.startswith("  ") and "#" in line
+            ]
+            assert listed, "Expected at least one section listing on stderr"
+
+            for entry in listed:
+                ok = runner.invoke(app, ["show", entry, "--vault", str(anchor_vault)])
+                assert ok.exit_code == 0, (
+                    f"Listed entry {entry!r} did not roundtrip through the parser: "
+                    f"stderr={ok.stderr!r}"
+                )
 
     def test_show_section_ambiguous_lists_with_line_numbers(
         self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
@@ -1033,8 +1063,8 @@ class TestShowCommand:
             )
             assert result.exit_code != 0
             assert "Ambiguous section" in result.stderr
-            assert "Alpha > Repeat" in result.stderr
-            assert "Beta > Repeat" in result.stderr
+            assert "dupes#Alpha#Repeat" in result.stderr
+            assert "dupes#Beta#Repeat" in result.stderr
             # Line numbers ('L<n>') give the user something to anchor on
             assert re.search(r"L\d+:", result.stderr)
 
@@ -1045,16 +1075,23 @@ class TestShowCommand:
         assert "#Heading" in result.output
         assert "candidates" in result.output.lower()
 
-    def test_show_section_double_hash_rejected(
+    def test_show_section_collapses_hash_runs(
         self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
     ):
-        """`Note##Heading` is rejected rather than silently collapsing to `Note#Heading`."""
+        """Runs of '#' collapse to a single separator so raw markdown heading
+        prefixes (e.g. 'Note##Setup###Installation') resolve cleanly. The
+        hash count signals heading level in markdown — we don't need it for
+        matching, and rejecting it would break copy-paste from the source."""
         with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
-            result = runner.invoke(
-                app, ["show", "nested##Setup", "--vault", str(anchor_vault)]
+            single = runner.invoke(
+                app, ["show", "nested#Setup#Installation", "--vault", str(anchor_vault)]
             )
-            assert result.exit_code != 0
-            assert "empty heading component" in result.stderr.lower()
+            doubled = runner.invoke(
+                app, ["show", "nested##Setup###Installation", "--vault", str(anchor_vault)]
+            )
+            assert single.exit_code == 0
+            assert doubled.exit_code == 0
+            assert single.output == doubled.output
 
     def test_show_section_trailing_newline_is_single(
         self, runner: CliRunner, anchor_vault: Path, configured_mock: Mock
