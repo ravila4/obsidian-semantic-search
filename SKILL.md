@@ -38,7 +38,7 @@ Do not use `search` thresholds for `suggest-links` (or vice versa). They live on
 
 ### `--score-min` is a noise filter, not a result-expander
 
-Lowering `--score-min` does not surface long-tail results — it only truncates. If you want more results, raise `--limit` (`-n`); if you want quieter output, raise `--score-min`.
+Lowering `--score-min` does not surface long-tail results — it only truncates. To see more results, raise `--limit` (`-n`). To quiet noisy output, raise `--score-min`.
 
 ## Core workflows
 
@@ -138,7 +138,7 @@ obsidian-semantic search "<q>" --limit 1 --json \
 Caveats:
 - `tags` is **not** present in `--json` output (gap to be aware of, no current workaround)
 - `headers` may be empty `[]` for short notes that weren't chunked (just `show <file_path>`)
-- `show <Note>#<Heading>` includes the markdown `## Heading` line in its output. Strip it if you're computing offsets from the body.
+- `show <Note>#<Heading>` includes the markdown `## Heading` line in its output. Strip the heading line before computing offsets into the body.
 
 ## Tag filtering and discovery
 
@@ -150,7 +150,7 @@ obsidian-semantic search "asdf qwerty" --tag "<candidate>" --json
 #   non-empty → tag exists
 ```
 
-Do **not** probe with a meaningful query — the results conflate tag-filtering with topical match, so you can't tell whether the tag is real or whether the query happened to score above zero.
+Do **not** probe with a meaningful query — the results conflate tag-filtering with topical match, making it ambiguous whether the tag is real or whether the query merely scored above zero on its own.
 
 ## Known limitations to recognize
 
