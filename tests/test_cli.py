@@ -1270,6 +1270,77 @@ class TestSuggestLinksCommand:
 
             assert result.exit_code == 0
 
+    def test_suggest_links_warns_on_unknown_exclude_folder(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """--exclude-same-folder for a non-existent folder warns to stderr.
+
+        Folder names must match exactly (e.g., 'Daily Log' not 'daily-log');
+        a silent no-op was the round-2 friction we're addressing.
+        """
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            runner.invoke(app, ["index", "--vault", str(vault_path)])
+
+            result = runner.invoke(
+                app, [
+                    "suggest-links", "--vault", str(vault_path),
+                    "--threshold", "0.0",
+                    "--exclude-same-folder", "daily-log",  # wrong case/punctuation
+                ]
+            )
+
+            assert result.exit_code == 0
+            assert "daily-log" in result.stderr
+            assert "not found" in result.stderr.lower() or "no such" in result.stderr.lower()
+
+    def test_suggest_links_silent_on_known_exclude_folder(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """No warning when the excluded folder exists in the vault."""
+        sub = vault_path / "Daily Log"
+        sub.mkdir()
+        (sub / "day1.md").write_text("# Day 1\n\nbody\n")
+
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            runner.invoke(app, ["index", "--vault", str(vault_path)])
+
+            result = runner.invoke(
+                app, [
+                    "suggest-links", "--vault", str(vault_path),
+                    "--threshold", "0.0",
+                    "--exclude-same-folder", "Daily Log",
+                ]
+            )
+
+            assert result.exit_code == 0
+            assert "not found" not in result.stderr.lower()
+
+    def test_suggest_links_output_includes_paths(
+        self, runner: CliRunner, vault_path: Path, configured_mock: Mock
+    ):
+        """Suggestion lines include vault-relative paths, not just stems.
+
+        Round-2 friction: agents had to round-trip through `search --json`
+        to get the path of a suggestion. The path makes the output directly
+        feedable to `show` and other commands.
+        """
+        sub = vault_path / "Empirico"
+        sub.mkdir()
+        (sub / "alpha.md").write_text("# Alpha\n\nbody alpha\n")
+        (sub / "beta.md").write_text("# Beta\n\nbody beta\n")
+
+        with patch("obsidian_semantic.cli.load_config", return_value=configured_mock):
+            runner.invoke(app, ["index", "--vault", str(vault_path)])
+
+            result = runner.invoke(
+                app, ["suggest-links", "--vault", str(vault_path), "--threshold", "0.0"]
+            )
+
+            assert result.exit_code == 0
+            # Both vault-relative paths must be present in the output.
+            assert "Empirico/alpha.md" in result.output
+            assert "Empirico/beta.md" in result.output
+
 
 class TestHelpOutput:
     """Test help output for commands."""

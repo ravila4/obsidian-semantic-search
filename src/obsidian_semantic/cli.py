@@ -695,6 +695,16 @@ def suggest_links(
     if exclude_same_folder:
         exclude_folders.update(exclude_same_folder)
 
+    # Folder matching is exact string equality on the top-level segment, so
+    # a misspelling silently no-ops. Surface unknown values up front.
+    unknown = sorted(f for f in exclude_folders if not (vault_path / f).is_dir())
+    if unknown:
+        typer.echo(
+            f"Warning: --exclude-same-folder values not found in vault: "
+            f"{', '.join(unknown)}",
+            err=True,
+        )
+
     typer.echo("Loading embeddings from index...")
     note_embeddings = get_note_embeddings(db)
     typer.echo(f"  {len(note_embeddings)} notes with embeddings")
@@ -727,13 +737,11 @@ def suggest_links(
 
     typer.echo(f"\nSuggested links (similarity >= {threshold:.2f}, not currently linked):\n")
 
-    max_a = max(len(Path(a).stem) for a, _, _ in suggestions)
-    max_b = max(len(Path(b).stem) for _, b, _ in suggestions)
+    max_a = max(len(a) for a, _, _ in suggestions)
+    max_b = max(len(b) for _, b, _ in suggestions)
 
     for i, (a, b, score) in enumerate(suggestions, 1):
-        name_a = Path(a).stem
-        name_b = Path(b).stem
-        typer.echo(f"  {i:3d}. {name_a:<{max_a}}  <->  {name_b:<{max_b}}  {score:.3f}")
+        typer.echo(f"  {i:3d}. {score:.3f}  {a:<{max_a}}  <->  {b:<{max_b}}")
 
 
 if __name__ == "__main__":
