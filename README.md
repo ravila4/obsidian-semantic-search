@@ -35,7 +35,9 @@ obsidian-semantic search "fisher" --score-min 0.6     # drop low-relevance hits
 obsidian-semantic search "fisher" --per-file 0        # show every matching chunk
 ```
 
-By default, results are deduped to one chunk per file so a long canonical note doesn't crowd out other matches. Pass `--per-file N` to allow up to N chunks per file (or `0` for unlimited).
+By default, results are deduped to one chunk per file. Pass `--per-file N` to allow up to N chunks per file (or `0` for unlimited).
+
+`--score-min` thresholds need to account for dedup: the second-best file's surviving chunk often scores ~0.05–0.10 lower than the duplicate chunks it displaced, so a threshold tuned against raw chunk scores can drop relevant notes. Calibrate against the post-dedup output. Useful absolute bands on `ollama+nomic` are roughly: ≥0.65 strong title-level match, ≥0.5 topical, <0.4 likely noise. Other embedders (qwen3, gemini) sit on different scales.
 
 ### Find related notes
 
@@ -46,16 +48,19 @@ obsidian-semantic related "Programming/Python/Unit Testing.md"
 obsidian-semantic related "Daily/2026-02-05.md" --limit 5
 ```
 
-Works with both indexed and unindexed notes -- if the note isn't in the index yet, it gets chunked and embedded on the fly.
+If the note isn't in the index, it's chunked and embedded on the fly.
 
 ### Show a note
 
-Print the full contents of a note straight to stdout. Accepts a vault-relative path or a bare filename (with or without `.md`); if the basename is unique, it's resolved automatically.
+Print the full contents of a note straight to stdout. Accepts a vault-relative path or a bare filename (with or without `.md`); if the basename is unique, it's resolved automatically. Reads from disk, so it works on un-indexed files too (unlike `search`).
 
 ```bash
 obsidian-semantic show "Fisher's Exact in Empiroar.md"
 obsidian-semantic show "Programming/Python/Unit Testing.md"
+obsidian-semantic show "Unit Testing.md#Setup#Installation"   # specific section
 ```
+
+Append `#Heading` (or `#Parent#Child` for nested sections) to print just that section. Heading paths are matched against the breadcrumb suffix and are case-insensitive; ambiguous headings are listed with line numbers.
 
 ### Suggest missing links
 

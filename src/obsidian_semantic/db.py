@@ -35,9 +35,16 @@ class ChunkRecord:
 
 @dataclass
 class SearchResult:
-    """A search result from the database."""
+    """A search result from the database.
 
-    id: str
+    `chunk_id` is the storage primary key for the underlying chunk
+    ("{file_path}#{chunk_index}"); use `file_path` as the stable
+    file-level identifier. After per-file dedup the chunk_id surfaced
+    here is the top-scoring chunk for the file and may shift between
+    indexings.
+    """
+
+    chunk_id: str
     file_path: str
     title: str
     headers: list[str]
@@ -262,7 +269,7 @@ class SemanticDB:
 
         return [
             SearchResult(
-                id=r["id"],
+                chunk_id=r["id"],
                 file_path=r["file_path"],
                 title=r["title"],
                 headers=r.get("headers", []),
