@@ -4,6 +4,23 @@ version = "0.1.0"
 description = "Semantic search for Obsidian vaults"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Ricardo Avila", email = "ravila@protonmail.com" }]
+keywords = ["obsidian", "semantic-search", "embeddings", "vector-search", "lancedb", "ollama", "rag"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Text Processing :: Indexing",
+    "Topic :: Utilities",
+]
 dependencies = [
     "typer>=0.9",
     "lancedb>=0.5",
@@ -21,11 +38,16 @@ gemini = [
 ]
 dev = ["pytest>=8.0", "pytest-cov>=4.0", "ruff>=0.1"]
 
+[project.urls]
+Repository = "https://github.com/ravila4/obsidian-semantic-search"
+Issues = "https://github.com/ravila4/obsidian-semantic-search/issues"
+Changelog = "https://github.com/ravila4/obsidian-semantic-search/releases"
+
 [project.scripts]
 obsidian-semantic = "obsidian_semantic.cli:app"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.22"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]

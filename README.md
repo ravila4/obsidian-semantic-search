@@ -1,5 +1,9 @@
 # obsidian-semantic
 
+[![PyPI](https://img.shields.io/pypi/v/obsidian-semantic.svg)](https://pypi.org/project/obsidian-semantic/)
+[![Python](https://img.shields.io/pypi/pyversions/obsidian-semantic.svg)](https://pypi.org/project/obsidian-semantic/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Semantic search for Obsidian vaults. Index your vault into vector embeddings, then search by meaning rather than keywords.
 
 <p align="center">
@@ -8,14 +12,35 @@ Semantic search for Obsidian vaults. Index your vault into vector embeddings, th
 
 > **Using this with an AI agent (Claude Code, Cursor, etc.)?** See [SKILL.md](SKILL.md) for agent-facing guidance — score interpretation, workflows, and known gotchas.
 
-## Setup
+## Install
 
 ```bash
-uv sync
-uv run obsidian-semantic configure
+# As a standalone CLI (recommended)
+uv tool install obsidian-semantic
+
+# Or with pipx (also installs into an isolated environment)
+pipx install obsidian-semantic
+
+# With Gemini embedder support
+uv tool install "obsidian-semantic[gemini]"
+```
+
+Then configure:
+
+```bash
+obsidian-semantic configure
 ```
 
 Configuration is stored in `~/.config/obsidian-semantic/config.yaml`. Supports Ollama (local), LM Studio (local), and Gemini embedders.
+
+### From source
+
+```bash
+git clone https://github.com/ravila4/obsidian-semantic-search
+cd obsidian-semantic-search
+uv sync
+uv run obsidian-semantic configure
+```
 
 ## Usage
 
