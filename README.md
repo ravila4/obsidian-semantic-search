@@ -18,9 +18,8 @@ Semantic search for Obsidian vaults. Index your vault into vector embeddings, th
 # As a standalone CLI (recommended)
 uv tool install obsidian-semantic
 
-# Or with pip / pipx
+# Or with pipx (also installs into an isolated environment)
 pipx install obsidian-semantic
-pip install obsidian-semantic
 
 # With Gemini embedder support
 uv tool install "obsidian-semantic[gemini]"
