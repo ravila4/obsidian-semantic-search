@@ -5,7 +5,8 @@
 
     Install:
         cp scripts/launchd/com.ravila.obsidian-semantic-index.plist ~/Library/LaunchAgents/
-        # Edit the absolute paths below to match your home directory.
+        # Edit the absolute paths below: point ProgramArguments at your
+        # clone, and the log paths at your home directory.
         launchctl load -w ~/Library/LaunchAgents/com.ravila.obsidian-semantic-index.plist
 
     Logs land at ~/Library/Logs/obsidian-semantic-index.log
@@ -17,7 +18,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/ravila/Projects/obsidian-semantic-search/scripts/launchd/obsidian-semantic-index.sh</string>
+        <string>/ABSOLUTE/PATH/TO/obsidian-semantic-search/scripts/launchd/obsidian-semantic-index.sh</string>
     </array>
 
     <!-- Run hourly. StartInterval counts elapsed wall-clock seconds; the job
@@ -30,9 +31,9 @@
     <false/>
 
     <key>StandardOutPath</key>
-    <string>/Users/ravila/Library/Logs/obsidian-semantic-index.log</string>
+    <string>/Users/YOUR_USERNAME/Library/Logs/obsidian-semantic-index.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/ravila/Library/Logs/obsidian-semantic-index.log</string>
+    <string>/Users/YOUR_USERNAME/Library/Logs/obsidian-semantic-index.log</string>
 </dict>
 </plist>
